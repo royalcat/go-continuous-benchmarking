@@ -29,22 +29,16 @@ func ParseGoBenchOutput(r io.Reader) ([]model.BenchmarkResult, error) {
 
 	var results []model.BenchmarkResult
 	var currentPkg string
-	packages := make(map[string]bool)
 
-	// First pass: collect all package names to determine if we have multiple packages.
+	// First pass: collect all lines and track package names.
 	var lines []string
 	for scanner.Scan() {
 		line := scanner.Text()
 		lines = append(lines, line)
-		if m := rePkgLine.FindStringSubmatch(line); m != nil {
-			packages[m[1]] = true
-		}
 	}
 	if err := scanner.Err(); err != nil {
 		return nil, fmt.Errorf("reading benchmark output: %w", err)
 	}
-
-	multiPkg := len(packages) > 1
 
 	for _, line := range lines {
 		// Track current package.
@@ -59,13 +53,18 @@ func ParseGoBenchOutput(r io.Reader) ([]model.BenchmarkResult, error) {
 		}
 
 		name := m[1]
-		procs := m[2]
+		procsStr := m[2]
 		iters := m[3]
 		rest := m[4]
 
+		procs := 0
+		if procsStr != "" {
+			procs, _ = strconv.Atoi(procsStr)
+		}
+
 		extra := iters + " times"
-		if procs != "" {
-			extra += "\n" + procs + " procs"
+		if procs > 0 {
+			extra += "\n" + procsStr + " procs"
 		}
 
 		// Parse value/unit pairs from the remainder.
@@ -80,11 +79,6 @@ func ParseGoBenchOutput(r io.Reader) ([]model.BenchmarkResult, error) {
 			pairs = append(pairs, [2]string{fields[i], fields[i+1]})
 		}
 
-		baseName := name
-		if multiPkg && currentPkg != "" {
-			baseName = name + " (" + currentPkg + ")"
-		}
-
 		for i, pair := range pairs {
 			val, err := strconv.ParseFloat(pair[0], 64)
 			if err != nil {
@@ -92,16 +86,18 @@ func ParseGoBenchOutput(r io.Reader) ([]model.BenchmarkResult, error) {
 			}
 			unit := pair[1]
 
-			resultName := baseName
+			resultName := name
 			if i > 0 {
-				resultName = baseName + " - " + unit
+				resultName = name + " - " + unit
 			}
 
 			results = append(results, model.BenchmarkResult{
-				Name:  resultName,
-				Value: val,
-				Unit:  unit,
-				Extra: extra,
+				Name:    resultName,
+				Value:   val,
+				Unit:    unit,
+				Extra:   extra,
+				Package: currentPkg,
+				Procs:   procs,
 			})
 		}
 	}

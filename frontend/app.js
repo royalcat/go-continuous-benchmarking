@@ -2,14 +2,24 @@
 
 (function () {
   // ---- Configuration ----
-  const CHART_COLOR = "#0969da";
-  const CHART_COLOR_ALPHA = CHART_COLOR + "30";
+  const CHART_COLORS = [
+    "#0969da",
+    "#cf222e",
+    "#1a7f37",
+    "#8250df",
+    "#bf8700",
+    "#0550ae",
+    "#da3633",
+    "#2da44e",
+  ];
   const POINT_RADIUS = 4;
   const POINT_HOVER_RADIUS = 6;
 
   // ---- DOM references ----
   const branchSelect = document.getElementById("branch-select");
+  const cpuSelect = document.getElementById("cpu-select");
   const filterInput = document.getElementById("filter-input");
+  const packageTabsEl = document.getElementById("package-tabs");
   const mainEl = document.getElementById("main");
   const loadingMsg = document.getElementById("loading-msg");
   const lastUpdateEl = document.getElementById("last-update");
@@ -19,15 +29,13 @@
   // ---- State ----
   let currentBranchData = null; // raw array of BenchmarkEntry
   let currentBranch = null;
+  let currentPackage = null; // null = "All" or first tab
   let chartInstances = []; // keep references so we can destroy on re-render
 
   // ---- Helpers ----
 
   function getBasePath() {
-    // Determine the base URL path from the current page location.
-    // This allows the app to be deployed under any sub-path on GitHub Pages.
     const path = window.location.pathname;
-    // Remove trailing index.html if present
     const base = path.replace(/\/index\.html$/, "");
     return base.endsWith("/") ? base : base + "/";
   }
@@ -35,13 +43,13 @@
   async function fetchJSON(url) {
     const resp = await fetch(url);
     if (!resp.ok) {
-      throw new Error(`HTTP ${resp.status} fetching ${url}`);
+      throw new Error("HTTP " + resp.status + " fetching " + url);
     }
     return resp.json();
   }
 
   function showMessage(html) {
-    mainEl.innerHTML = `<div class="state-message">${html}</div>`;
+    mainEl.innerHTML = '<div class="state-message">' + html + "</div>";
   }
 
   function destroyCharts() {
@@ -49,27 +57,6 @@
       c.destroy();
     }
     chartInstances = [];
-  }
-
-  /**
-   * Group benchmark entries by benchmark name.
-   * Returns a Map<string, Array<{commit, date, bench}>>
-   */
-  function collectBenchesPerTestCase(entries) {
-    const map = new Map();
-    for (const entry of entries) {
-      const { commit, date, benchmarks } = entry;
-      for (const bench of benchmarks) {
-        const result = { commit, date, bench };
-        let arr = map.get(bench.name);
-        if (!arr) {
-          arr = [];
-          map.set(bench.name, arr);
-        }
-        arr.push(result);
-      }
-    }
-    return map;
   }
 
   function formatDate(isoOrTimestamp) {
@@ -88,50 +75,177 @@
     return sha ? sha.slice(0, 7) : "?";
   }
 
+  /**
+   * Extract all unique packages from the data entries.
+   * Falls back to legacy name parsing if `package` field is absent.
+   */
+  function extractPackages(entries) {
+    const pkgs = new Set();
+    for (const entry of entries) {
+      for (const bench of entry.benchmarks) {
+        if (bench.package) {
+          pkgs.add(bench.package);
+        }
+      }
+    }
+    // Sort for stable ordering; shorter paths first
+    return Array.from(pkgs).sort(function (a, b) {
+      if (a.length !== b.length) return a.length - b.length;
+      return a.localeCompare(b);
+    });
+  }
+
+  /**
+   * Extract all unique CPU/procs values from data entries.
+   * Returns sorted array of numbers.
+   */
+  function extractCPUs(entries) {
+    const cpus = new Set();
+    for (const entry of entries) {
+      for (const bench of entry.benchmarks) {
+        if (bench.procs && bench.procs > 0) {
+          cpus.add(bench.procs);
+        }
+      }
+    }
+    return Array.from(cpus).sort(function (a, b) {
+      return a - b;
+    });
+  }
+
+  /**
+   * Extract the short package name (last segment) for display.
+   */
+  function shortPackageName(fullPkg) {
+    if (!fullPkg) return "(unknown)";
+    const parts = fullPkg.split("/");
+    return parts[parts.length - 1];
+  }
+
+  /**
+   * Get the base benchmark name (for grouping).
+   * Strips the " - unit" suffix if present.
+   */
+  function baseBenchName(name) {
+    const idx = name.indexOf(" - ");
+    return idx >= 0 ? name.substring(0, idx) : name;
+  }
+
+  /**
+   * Get the metric label (the part after " - ", or the unit from the first metric).
+   */
+  function metricLabel(name) {
+    const idx = name.indexOf(" - ");
+    return idx >= 0 ? name.substring(idx + 3) : null;
+  }
+
+  /**
+   * Collect benchmark data points per test case name, filtered by package and cpu.
+   * Returns a Map<string, Array<{commit, date, bench}>>
+   */
+  function collectBenchesPerTestCase(entries, filterPkg, filterCPU) {
+    const map = new Map();
+    for (const entry of entries) {
+      var commit = entry.commit;
+      var date = entry.date;
+      for (const bench of entry.benchmarks) {
+        // Filter by package
+        if (filterPkg !== null && bench.package !== filterPkg) {
+          continue;
+        }
+        // Filter by CPU
+        if (filterCPU !== null && bench.procs !== filterCPU) {
+          continue;
+        }
+
+        var result = { commit: commit, date: date, bench: bench };
+        var arr = map.get(bench.name);
+        if (!arr) {
+          arr = [];
+          map.set(bench.name, arr);
+        }
+        arr.push(result);
+      }
+    }
+    return map;
+  }
+
+  /**
+   * Group benchmark names by their base name.
+   * Returns an array of { baseName, benchNames: string[] } in insertion order.
+   */
+  function groupBenchmarks(benchMap) {
+    var groups = new Map(); // baseName -> string[]
+    var groupOrder = [];
+
+    for (const benchName of benchMap.keys()) {
+      var base = baseBenchName(benchName);
+      var arr = groups.get(base);
+      if (!arr) {
+        arr = [];
+        groups.set(base, arr);
+        groupOrder.push(base);
+      }
+      arr.push(benchName);
+    }
+
+    return groupOrder.map(function (base) {
+      return { baseName: base, benchNames: groups.get(base) };
+    });
+  }
+
   // ---- Rendering ----
 
-  function renderChart(container, name, dataset) {
-    const card = document.createElement("div");
+  function getChartColor(index) {
+    return CHART_COLORS[index % CHART_COLORS.length];
+  }
+
+  function renderChart(container, name, displayTitle, dataset, colorIndex) {
+    var card = document.createElement("div");
     card.className = "chart-card";
 
-    const title = document.createElement("h2");
-    title.textContent = name;
+    var title = document.createElement("h2");
+    title.textContent = displayTitle;
     card.appendChild(title);
 
-    const wrapper = document.createElement("div");
+    var wrapper = document.createElement("div");
     wrapper.className = "chart-wrapper";
     card.appendChild(wrapper);
 
-    const canvas = document.createElement("canvas");
+    var canvas = document.createElement("canvas");
     wrapper.appendChild(canvas);
     container.appendChild(card);
 
-    const labels = dataset.map((d) => shortSHA(d.commit.sha));
-    const values = dataset.map((d) => d.bench.value);
-    const unit = dataset.length > 0 ? dataset[0].bench.unit : "";
+    var labels = dataset.map(function (d) {
+      return shortSHA(d.commit.sha);
+    });
+    var values = dataset.map(function (d) {
+      return d.bench.value;
+    });
+    var unit = dataset.length > 0 ? dataset[0].bench.unit : "";
+    var color = getChartColor(colorIndex || 0);
+    var colorAlpha = color + "30";
 
-    const isDarkMode =
+    var isDarkMode =
       window.matchMedia &&
       window.matchMedia("(prefers-color-scheme: dark)").matches;
-    const gridColor = isDarkMode
-      ? "rgba(255,255,255,0.1)"
-      : "rgba(0,0,0,0.08)";
-    const textColor = isDarkMode ? "#8b949e" : "#656d76";
+    var gridColor = isDarkMode ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.08)";
+    var textColor = isDarkMode ? "#8b949e" : "#656d76";
 
-    const chart = new Chart(canvas, {
+    var chart = new Chart(canvas, {
       type: "line",
       data: {
-        labels,
+        labels: labels,
         datasets: [
           {
             label: name,
             data: values,
-            borderColor: CHART_COLOR,
-            backgroundColor: CHART_COLOR_ALPHA,
+            borderColor: color,
+            backgroundColor: colorAlpha,
             borderWidth: 2,
             pointRadius: POINT_RADIUS,
             pointHoverRadius: POINT_HOVER_RADIUS,
-            pointBackgroundColor: CHART_COLOR,
+            pointBackgroundColor: color,
             fill: true,
             tension: 0.15,
           },
@@ -173,16 +287,15 @@
             callbacks: {
               title: function (items) {
                 if (!items.length) return "";
-                const idx = items[0].dataIndex;
-                const d = dataset[idx];
-                const sha = shortSHA(d.commit.sha);
-                return `Commit: ${sha}`;
+                var idx = items[0].dataIndex;
+                var d = dataset[idx];
+                return "Commit: " + shortSHA(d.commit.sha);
               },
               beforeBody: function (items) {
                 if (!items.length) return "";
-                const idx = items[0].dataIndex;
-                const d = dataset[idx];
-                const lines = [];
+                var idx = items[0].dataIndex;
+                var d = dataset[idx];
+                var lines = [];
                 if (d.commit.message) {
                   lines.push(d.commit.message);
                 }
@@ -196,14 +309,13 @@
                 return lines.join("\n");
               },
               label: function (item) {
-                const idx = item.dataIndex;
-                const d = dataset[idx];
-                let label = item.formattedValue + " " + d.bench.unit;
-                return label;
+                var idx = item.dataIndex;
+                var d = dataset[idx];
+                return item.formattedValue + " " + d.bench.unit;
               },
               afterLabel: function (item) {
-                const idx = item.dataIndex;
-                const d = dataset[idx];
+                var idx = item.dataIndex;
+                var d = dataset[idx];
                 return d.bench.extra ? "\n" + d.bench.extra : "";
               },
             },
@@ -211,8 +323,8 @@
         },
         onClick: function (_event, elements) {
           if (!elements || elements.length === 0) return;
-          const idx = elements[0].index;
-          const url = dataset[idx].commit.url;
+          var idx = elements[0].index;
+          var url = dataset[idx].commit.url;
           if (url) {
             window.open(url, "_blank");
           }
@@ -232,17 +344,69 @@
       return;
     }
 
-    const benchMap = collectBenchesPerTestCase(entries);
+    // Determine active filters
+    var filterCPU = null;
+    var cpuVal = cpuSelect.value;
+    if (cpuVal !== "all") {
+      filterCPU = parseInt(cpuVal, 10);
+    }
 
-    const filterText = (filterInput.value || "").toLowerCase().trim();
+    var filterPkg = currentPackage;
 
-    let rendered = 0;
-    for (const [benchName, dataset] of benchMap.entries()) {
-      if (filterText && !benchName.toLowerCase().includes(filterText)) {
-        continue;
+    var benchMap = collectBenchesPerTestCase(entries, filterPkg, filterCPU);
+    var filterText = (filterInput.value || "").toLowerCase().trim();
+
+    // Apply text filter
+    if (filterText) {
+      for (const [key] of benchMap) {
+        if (!key.toLowerCase().includes(filterText)) {
+          benchMap.delete(key);
+        }
       }
-      renderChart(mainEl, benchName, dataset);
-      rendered++;
+    }
+
+    if (benchMap.size === 0) {
+      showMessage("No benchmarks match the current filter.");
+      return;
+    }
+
+    // Group benchmarks by base name
+    var groups = groupBenchmarks(benchMap);
+    var rendered = 0;
+
+    for (var gi = 0; gi < groups.length; gi++) {
+      var group = groups[gi];
+      var groupEl = document.createElement("div");
+      groupEl.className = "bench-group";
+
+      // Group title
+      var titleEl = document.createElement("div");
+      titleEl.className = "bench-group-title";
+      titleEl.textContent = group.baseName;
+      groupEl.appendChild(titleEl);
+
+      // Charts container (grid)
+      var chartsEl = document.createElement("div");
+      chartsEl.className = "bench-group-charts";
+      if (group.benchNames.length === 1) {
+        chartsEl.classList.add("single-chart");
+      }
+      groupEl.appendChild(chartsEl);
+
+      for (var ci = 0; ci < group.benchNames.length; ci++) {
+        var benchName = group.benchNames[ci];
+        var dataset = benchMap.get(benchName);
+        if (!dataset || dataset.length === 0) continue;
+
+        // Display title: metric label if grouped, otherwise the unit
+        var metric = metricLabel(benchName);
+        var displayTitle = metric ? metric : dataset[0].bench.unit;
+
+        renderChart(chartsEl, benchName, displayTitle, dataset, ci);
+        rendered++;
+      }
+
+      mainEl.appendChild(groupEl);
     }
 
     if (rendered === 0) {
@@ -250,12 +414,112 @@
     }
   }
 
+  // ---- Package tabs ----
+
+  function renderPackageTabs(packages) {
+    packageTabsEl.innerHTML = "";
+
+    if (packages.length <= 1) {
+      // Single or no package: use that package as default filter, no tabs needed
+      currentPackage = packages.length === 1 ? packages[0] : null;
+      return;
+    }
+
+    // "All" tab
+    var allTab = document.createElement("button");
+    allTab.className = "package-tab";
+    allTab.textContent = "All";
+    allTab.dataset.pkg = "__all__";
+    packageTabsEl.appendChild(allTab);
+
+    for (var i = 0; i < packages.length; i++) {
+      var tab = document.createElement("button");
+      tab.className = "package-tab";
+      tab.textContent = shortPackageName(packages[i]);
+      tab.title = packages[i]; // full path on hover
+      tab.dataset.pkg = packages[i];
+      packageTabsEl.appendChild(tab);
+    }
+
+    // Set initial active tab
+    if (currentPackage === null) {
+      // Default to "All"
+      allTab.classList.add("active");
+    } else {
+      setActivePackageTab(currentPackage);
+    }
+  }
+
+  function setActivePackageTab(pkg) {
+    var tabs = packageTabsEl.querySelectorAll(".package-tab");
+    for (var i = 0; i < tabs.length; i++) {
+      var tab = tabs[i];
+      if (pkg === null && tab.dataset.pkg === "__all__") {
+        tab.classList.add("active");
+      } else if (tab.dataset.pkg === pkg) {
+        tab.classList.add("active");
+      } else {
+        tab.classList.remove("active");
+      }
+    }
+  }
+
+  packageTabsEl.addEventListener("click", function (e) {
+    var tab = e.target.closest(".package-tab");
+    if (!tab) return;
+
+    var pkg = tab.dataset.pkg;
+    currentPackage = pkg === "__all__" ? null : pkg;
+    setActivePackageTab(currentPackage);
+
+    if (currentBranchData) {
+      renderBranch(currentBranchData);
+    }
+  });
+
+  // ---- CPU selector ----
+
+  function populateCPUSelector(entries) {
+    var cpus = extractCPUs(entries);
+    var currentVal = cpuSelect.value;
+
+    cpuSelect.innerHTML = "";
+
+    var allOpt = document.createElement("option");
+    allOpt.value = "all";
+    allOpt.textContent = "All";
+    cpuSelect.appendChild(allOpt);
+
+    for (var i = 0; i < cpus.length; i++) {
+      var opt = document.createElement("option");
+      opt.value = String(cpus[i]);
+      opt.textContent = String(cpus[i]);
+      cpuSelect.appendChild(opt);
+    }
+
+    // If only one CPU value, auto-select it
+    if (cpus.length === 1) {
+      cpuSelect.value = String(cpus[0]);
+    } else if (currentVal && cpus.indexOf(parseInt(currentVal, 10)) >= 0) {
+      // Restore previous selection if still valid
+      cpuSelect.value = currentVal;
+    } else {
+      cpuSelect.value = "all";
+    }
+  }
+
+  cpuSelect.addEventListener("change", function () {
+    if (currentBranchData) {
+      renderBranch(currentBranchData);
+    }
+  });
+
   // ---- Data loading ----
 
   async function loadMetadata() {
     try {
-      const base = getBasePath();
-      const metadata = await fetchJSON(base + "metadata.json");
+      var base = getBasePath();
+      var metadata = await fetchJSON(base + "metadata.json");
       if (metadata.lastUpdate) {
         lastUpdateEl.textContent = formatDate(metadata.lastUpdate);
       }
@@ -265,22 +529,20 @@
       }
     } catch {
       // metadata.json is optional
-      lastUpdateEl.textContent = "—";
+      lastUpdateEl.textContent = "\u2014";
     }
   }
 
   async function loadBranches() {
-    const base = getBasePath();
-    const branches = await fetchJSON(base + "branches.json");
+    var base = getBasePath();
+    var branches = await fetchJSON(base + "branches.json");
     return branches;
   }
 
   async function loadBranchData(branch) {
-    const base = getBasePath();
-    // Branch file names match how the Go tool sanitizes them:
-    // slashes and special chars become underscores.
-    const safeName = branch.replace(/[/\\:*?"<>|]/g, "_");
-    const data = await fetchJSON(base + "data/" + safeName + ".json");
+    var base = getBasePath();
+    var safeName = branch.replace(/[/\\:*?"<>|]/g, "_");
+    var data = await fetchJSON(base + "data/" + safeName + ".json");
     return data;
   }
 
@@ -290,15 +552,27 @@
 
     destroyCharts();
     mainEl.innerHTML = "";
-    showMessage('<span class="spinner"></span> Loading benchmark data…');
+    packageTabsEl.innerHTML = "";
+    showMessage('<span class="spinner"></span> Loading benchmark data\u2026');
     dlButton.disabled = true;
 
     try {
       currentBranchData = await loadBranchData(branch);
       dlButton.disabled = false;
+
+      // Populate CPU selector from data
+      populateCPUSelector(currentBranchData);
+
+      // Extract and render package tabs
+      var packages = extractPackages(currentBranchData);
+      currentPackage = null; // reset on branch change
+      renderPackageTabs(packages);
+
       renderBranch(currentBranchData);
     } catch (err) {
-      showMessage("Error loading data for branch <b>" + branch + "</b>: " + err.message);
+      showMessage(
+        "Error loading data for branch <b>" + branch + "</b>: " + err.message,
+      );
     }
   }
 
@@ -306,11 +580,13 @@
 
   branchSelect.addEventListener("change", function () {
     selectBranch(branchSelect.value);
+    if (branchSelect.value) {
+      updateHash();
+    }
   });
 
-  let filterTimeout = null;
+  var filterTimeout = null;
   filterInput.addEventListener("input", function () {
-    // Debounce filter re-renders
     clearTimeout(filterTimeout);
     filterTimeout = setTimeout(function () {
       if (currentBranchData) {
@@ -321,29 +597,39 @@
 
   dlButton.addEventListener("click", function () {
     if (!currentBranchData) return;
-    const json = JSON.stringify(currentBranchData, null, 2);
-    const blob = new Blob([json], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
+    var json = JSON.stringify(currentBranchData, null, 2);
+    var blob = new Blob([json], { type: "application/json" });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
     a.href = url;
     a.download = (currentBranch || "benchmark") + ".json";
     a.click();
     URL.revokeObjectURL(url);
   });
 
+  // ---- URL hash persistence ----
+
+  function updateHash() {
+    var params = new URLSearchParams();
+    if (currentBranch) {
+      params.set("branch", currentBranch);
+    }
+    window.location.hash = params.toString();
+  }
+
   // ---- Initialization ----
 
   async function init() {
     await loadMetadata();
 
-    let branches;
+    var branches;
     try {
       branches = await loadBranches();
     } catch (err) {
       showMessage(
         "Could not load branch list. Make sure benchmark data has been generated.<br><small>" +
           err.message +
-          "</small>"
+          "</small>",
       );
       return;
     }
@@ -355,21 +641,20 @@
 
     // Populate branch selector
     branchSelect.innerHTML = "";
-    for (const branch of branches) {
-      const opt = document.createElement("option");
-      opt.value = branch;
-      opt.textContent = branch;
+    for (var i = 0; i < branches.length; i++) {
+      var opt = document.createElement("option");
+      opt.value = branches[i];
+      opt.textContent = branches[i];
       branchSelect.appendChild(opt);
     }
 
-    // Try to select from URL hash, otherwise pick the first branch.
-    // URL format: #branch=main
-    let initialBranch = branches[0];
-    const hash = window.location.hash;
+    // Try to select from URL hash
+    var initialBranch = branches[0];
+    var hash = window.location.hash;
     if (hash) {
-      const params = new URLSearchParams(hash.slice(1));
-      const requested = params.get("branch");
-      if (requested && branches.includes(requested)) {
+      var params = new URLSearchParams(hash.slice(1));
+      var requested = params.get("branch");
+      if (requested && branches.indexOf(requested) >= 0) {
         initialBranch = requested;
       }
     }
@@ -377,13 +662,6 @@
     branchSelect.value = initialBranch;
     await selectBranch(initialBranch);
   }
-
-  // Update hash when branch changes so links can be shared
-  branchSelect.addEventListener("change", function () {
-    if (branchSelect.value) {
-      window.location.hash = "branch=" + encodeURIComponent(branchSelect.value);
-    }
-  });
 
   init();
 })();

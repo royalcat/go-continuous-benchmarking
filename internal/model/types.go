@@ -2,10 +2,12 @@ package model
 
 // BenchmarkResult represents a single benchmark measurement.
 type BenchmarkResult struct {
-	Name  string  `json:"name"`
-	Value float64 `json:"value"`
-	Unit  string  `json:"unit"`
-	Extra string  `json:"extra,omitempty"`
+	Name    string  `json:"name"`
+	Value   float64 `json:"value"`
+	Unit    string  `json:"unit"`
+	Extra   string  `json:"extra,omitempty"`
+	Package string  `json:"package,omitempty"`
+	Procs   int     `json:"procs,omitempty"`
 }
 
 // Commit represents the git commit associated with a benchmark run.

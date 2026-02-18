@@ -15,6 +15,9 @@
         --color-accent-hover: #0550ae;
         --color-btn-bg: #0969da;
         --color-btn-text: #ffffff;
+        --color-tab-active-bg: #ffffff;
+        --color-tab-active-border: #0969da;
+        --color-tab-hover-bg: #f0f3f6;
         --radius: 6px;
       }
 
@@ -29,6 +32,9 @@
           --color-accent-hover: #79c0ff;
           --color-btn-bg: #238636;
           --color-btn-text: #ffffff;
+          --color-tab-active-bg: #0d1117;
+          --color-tab-active-border: #58a6ff;
+          --color-tab-hover-bg: #1c2128;
         }
       }
 
@@ -118,6 +124,48 @@
         outline-offset: -1px;
       }
 
+      /* ---- Package tabs ---- */
+      .package-tabs {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0;
+        border-bottom: 1px solid var(--color-border);
+        margin-bottom: 24px;
+      }
+
+      .package-tabs:empty {
+        display: none;
+        margin-bottom: 0;
+      }
+
+      .package-tab {
+        padding: 8px 16px;
+        font-size: 0.875rem;
+        font-weight: 500;
+        color: var(--color-text-secondary);
+        cursor: pointer;
+        border: 1px solid transparent;
+        border-bottom: 2px solid transparent;
+        border-radius: var(--radius) var(--radius) 0 0;
+        background: transparent;
+        transition: color 0.15s, border-color 0.15s, background 0.15s;
+        user-select: none;
+        white-space: nowrap;
+      }
+
+      .package-tab:hover {
+        color: var(--color-text);
+        background: var(--color-tab-hover-bg);
+      }
+
+      .package-tab.active {
+        color: var(--color-text);
+        background: var(--color-tab-active-bg);
+        border-color: var(--color-border);
+        border-bottom-color: var(--color-tab-active-border);
+        font-weight: 600;
+      }
+
       /* ---- Main charts area ---- */
       #main {
         display: flex;
@@ -125,18 +173,45 @@
         gap: 32px;
       }
 
+      /* Benchmark group: groups related charts (same bench, different metrics) in a row */
+      .bench-group {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .bench-group-title {
+        font-size: 1.05rem;
+        font-weight: 600;
+        word-break: break-word;
+        padding: 0 4px;
+      }
+
+      .bench-group-charts {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+        gap: 16px;
+      }
+
       .chart-card {
         background: var(--color-bg-secondary);
         border: 1px solid var(--color-border);
         border-radius: var(--radius);
         padding: 16px;
+        min-width: 0;
       }
 
       .chart-card h2 {
-        font-size: 1rem;
+        font-size: 0.9rem;
         font-weight: 600;
         margin-bottom: 12px;
         word-break: break-word;
+        color: var(--color-text-secondary);
+      }
+
+      /* When there's only 1 chart in a group, let it be full width */
+      .bench-group-charts.single-chart {
+        grid-template-columns: 1fr;
       }
 
       .chart-wrapper {
@@ -216,6 +291,11 @@
         <option value="">Loading branches…</option>
       </select>
 
+      <label for="cpu-select">CPUs:</label>
+      <select id="cpu-select">
+        <option value="all">All</option>
+      </select>
+
       <label for="filter-input">Filter:</label>
       <input
         id="filter-input"
@@ -224,6 +304,8 @@
         autocomplete="off"
       />
     </div>
+
+    <div class="package-tabs" id="package-tabs"></div>
 
     <main id="main">
       <div class="state-message" id="loading-msg">
