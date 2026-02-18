@@ -130,15 +130,6 @@
   }
 
   /**
-   * Extract the short package name (last segment) for display.
-   */
-  function shortPackageName(fullPkg) {
-    if (!fullPkg) return "(unknown)";
-    const parts = fullPkg.split("/");
-    return parts[parts.length - 1];
-  }
-
-  /**
    * Get the base benchmark name (for grouping).
    * Strips the " - unit" suffix if present.
    */
@@ -482,8 +473,7 @@
     for (var i = 0; i < packages.length; i++) {
       var tab = document.createElement("button");
       tab.className = "package-tab";
-      tab.textContent = shortPackageName(packages[i]);
-      tab.title = packages[i]; // full path on hover
+      tab.textContent = packages[i];
       tab.dataset.pkg = packages[i];
       packageTabsEl.appendChild(tab);
     }
