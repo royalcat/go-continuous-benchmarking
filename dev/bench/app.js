@@ -18,6 +18,8 @@
   // ---- DOM references ----
   const branchSelect = document.getElementById("branch-select");
   const cpuSelect = document.getElementById("cpu-select");
+  const cpuModelSelect = document.getElementById("cpu-model-select");
+  const cpuModelGroup = document.getElementById("cpu-model-group");
   const filterInput = document.getElementById("filter-input");
   const packageTabsEl = document.getElementById("package-tabs");
   const mainEl = document.getElementById("main");
@@ -114,6 +116,20 @@
   }
 
   /**
+   * Extract all unique CPU model strings from data entries.
+   * Returns sorted array of strings.
+   */
+  function extractCPUModels(entries) {
+    const models = new Set();
+    for (const entry of entries) {
+      if (entry.cpu) {
+        models.add(entry.cpu);
+      }
+    }
+    return Array.from(models).sort();
+  }
+
+  /**
    * Extract the short package name (last segment) for display.
    */
   function shortPackageName(fullPkg) {
@@ -143,22 +159,39 @@
    * Collect benchmark data points per test case name, filtered by package and cpu.
    * Returns a Map<string, Array<{commit, date, bench}>>
    */
-  function collectBenchesPerTestCase(entries, filterPkg, filterCPU) {
+  function collectBenchesPerTestCase(
+    entries,
+    filterPkg,
+    filterCPU,
+    filterCPUModel,
+  ) {
     const map = new Map();
     for (const entry of entries) {
       var commit = entry.commit;
       var date = entry.date;
+      var entryCPU = entry.cpu || "";
+
+      // Filter by CPU model at entry level
+      if (filterCPUModel !== null && entryCPU !== filterCPUModel) {
+        continue;
+      }
+
       for (const bench of entry.benchmarks) {
         // Filter by package
         if (filterPkg !== null && bench.package !== filterPkg) {
           continue;
         }
-        // Filter by CPU
+        // Filter by CPU count
         if (filterCPU !== null && bench.procs !== filterCPU) {
           continue;
         }
 
-        var result = { commit: commit, date: date, bench: bench };
+        var result = {
+          commit: commit,
+          date: date,
+          bench: bench,
+          cpu: entryCPU,
+        };
         var arr = map.get(bench.name);
         if (!arr) {
           arr = [];
@@ -300,6 +333,9 @@
                   lines.push(d.commit.message);
                 }
                 lines.push("");
+                if (d.cpu) {
+                  lines.push("CPU: " + d.cpu);
+                }
                 if (d.commit.date) {
                   lines.push("Date: " + formatDate(d.commit.date));
                 }
@@ -351,9 +387,20 @@
       filterCPU = parseInt(cpuVal, 10);
     }
 
+    var filterCPUModel = null;
+    var cpuModelVal = cpuModelSelect.value;
+    if (cpuModelVal !== "all") {
+      filterCPUModel = cpuModelVal;
+    }
+
     var filterPkg = currentPackage;
 
-    var benchMap = collectBenchesPerTestCase(entries, filterPkg, filterCPU);
+    var benchMap = collectBenchesPerTestCase(
+      entries,
+      filterPkg,
+      filterCPU,
+      filterCPUModel,
+    );
     var filterText = (filterInput.value || "").toLowerCase().trim();
 
     // Apply text filter
@@ -514,6 +561,48 @@
     }
   });
 
+  // ---- CPU Model selector ----
+
+  function populateCPUModelSelector(entries) {
+    var models = extractCPUModels(entries);
+    var currentVal = cpuModelSelect.value;
+
+    cpuModelSelect.innerHTML = "";
+
+    var allOpt = document.createElement("option");
+    allOpt.value = "all";
+    allOpt.textContent = "All";
+    cpuModelSelect.appendChild(allOpt);
+
+    for (var i = 0; i < models.length; i++) {
+      var opt = document.createElement("option");
+      opt.value = models[i];
+      opt.textContent = models[i];
+      cpuModelSelect.appendChild(opt);
+    }
+
+    // Hide the selector entirely when no CPU info exists in the data
+    if (models.length === 0) {
+      cpuModelGroup.style.display = "none";
+      cpuModelSelect.value = "all";
+    } else {
+      cpuModelGroup.style.display = "flex";
+      if (models.length === 1) {
+        cpuModelSelect.value = models[0];
+      } else if (currentVal && models.indexOf(currentVal) >= 0) {
+        cpuModelSelect.value = currentVal;
+      } else {
+        cpuModelSelect.value = "all";
+      }
+    }
+  }
+
+  cpuModelSelect.addEventListener("change", function () {
+    if (currentBranchData) {
+      renderBranch(currentBranchData);
+    }
+  });
+
   // ---- Data loading ----
 
   async function loadMetadata() {
@@ -560,8 +649,9 @@
       currentBranchData = await loadBranchData(branch);
       dlButton.disabled = false;
 
-      // Populate CPU selector from data
+      // Populate CPU selectors from data
       populateCPUSelector(currentBranchData);
+      populateCPUModelSelector(currentBranchData);
 
       // Extract and render package tabs
       var packages = extractPackages(currentBranchData);
