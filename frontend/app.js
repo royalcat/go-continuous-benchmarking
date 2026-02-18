@@ -383,7 +383,7 @@
     // Determine active filters
     var filterCPU = null;
     var cpuVal = cpuSelect.value;
-    if (cpuVal !== "all") {
+    if (cpuVal) {
       filterCPU = parseInt(cpuVal, 10);
     }
 
@@ -532,11 +532,6 @@
 
     cpuSelect.innerHTML = "";
 
-    var allOpt = document.createElement("option");
-    allOpt.value = "all";
-    allOpt.textContent = "All";
-    cpuSelect.appendChild(allOpt);
-
     for (var i = 0; i < cpus.length; i++) {
       var opt = document.createElement("option");
       opt.value = String(cpus[i]);
@@ -544,14 +539,11 @@
       cpuSelect.appendChild(opt);
     }
 
-    // If only one CPU value, auto-select it
-    if (cpus.length === 1) {
-      cpuSelect.value = String(cpus[0]);
-    } else if (currentVal && cpus.indexOf(parseInt(currentVal, 10)) >= 0) {
-      // Restore previous selection if still valid
+    // Restore previous selection if still valid, otherwise select first available
+    if (currentVal && cpus.indexOf(parseInt(currentVal, 10)) >= 0) {
       cpuSelect.value = currentVal;
-    } else {
-      cpuSelect.value = "all";
+    } else if (cpus.length > 0) {
+      cpuSelect.value = String(cpus[0]);
     }
   }
 
