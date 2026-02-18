@@ -138,8 +138,7 @@ PASS
 		t.Fatalf("expected 2 results, got %d", len(results))
 	}
 
-	// With the new model, names should NOT include the package prefix.
-	// Package is stored separately in the Package field.
+	// Package is stored separately in the Package field, not in the name.
 	assertResult(t, results[0], model.BenchmarkResult{
 		Name:    "BenchmarkA",
 		Value:   1000,
@@ -440,6 +439,36 @@ PASS
 		Extra:   "500000 times\n8 procs",
 		Package: "github.com/user/repo/pkgb",
 		Procs:   8,
+	})
+}
+
+func TestParseGoBenchOutput_CPULineIgnored(t *testing.T) {
+	// The cpu: line in benchmark output should be silently ignored by the parser.
+	// CPU model detection is handled at a higher level (host auto-detection or CLI flag).
+	input := `goos: linux
+goarch: amd64
+pkg: github.com/user/repo
+cpu: AMD Ryzen 9 5950X 16-Core Processor
+BenchmarkHash-32      2000000               350 ns/op
+PASS
+`
+
+	results, err := ParseGoBenchOutput(strings.NewReader(input))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+
+	assertResult(t, results[0], model.BenchmarkResult{
+		Name:    "BenchmarkHash",
+		Value:   350,
+		Unit:    "ns/op",
+		Extra:   "2000000 times\n32 procs",
+		Package: "github.com/user/repo",
+		Procs:   32,
 	})
 }
 

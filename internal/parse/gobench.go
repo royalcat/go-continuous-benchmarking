@@ -30,7 +30,7 @@ func ParseGoBenchOutput(r io.Reader) ([]model.BenchmarkResult, error) {
 	var results []model.BenchmarkResult
 	var currentPkg string
 
-	// First pass: collect all lines and track package names.
+	// First pass: collect all lines.
 	var lines []string
 	for scanner.Scan() {
 		line := scanner.Text()

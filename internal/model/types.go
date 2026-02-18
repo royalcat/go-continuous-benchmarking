@@ -23,6 +23,7 @@ type Commit struct {
 type BenchmarkEntry struct {
 	Commit     Commit            `json:"commit"`
 	Date       int64             `json:"date"`
+	CPU        string            `json:"cpu,omitempty"`
 	Benchmarks []BenchmarkResult `json:"benchmarks"`
 }
 

@@ -56,6 +56,11 @@ inputs:
     required: false
     default: "false"
 
+  cpu-model:
+    description: "CPU model name to record alongside benchmark results. If empty, auto-detected from the runner machine."
+    required: false
+    default: ""
+
   fail-on-alert:
     description: "If true, fail the workflow when a benchmark result exceeds the alert threshold"
     required: false
@@ -184,6 +189,11 @@ runs:
           MAX_ITEMS_FLAG="-max-items=${MAX_ITEMS}"
         fi
 
+        CPU_MODEL_FLAG=""
+        if [ -n "${{ inputs.cpu-model }}" ]; then
+          CPU_MODEL_FLAG="-cpu-model=${{ inputs.cpu-model }}"
+        fi
+
         "$TOOL_BIN" \
           -output-file="${OUTPUT_FILE_ABS}" \
           -branch="${BRANCH}" \
@@ -194,7 +204,8 @@ runs:
           -commit-date="${{ steps.commit-info.outputs.commit-date }}" \
           -commit-url="${{ steps.commit-info.outputs.commit-url }}" \
           -repo-url="${REPO_URL}" \
-          ${MAX_ITEMS_FLAG}
+          ${MAX_ITEMS_FLAG} \
+          ${CPU_MODEL_FLAG}
 
         echo "results-json=${DATA_DIR}/data/$(echo "${BRANCH}" | sed 's/[\/\\:*?"<>|]/_/g').json" >> "$GITHUB_OUTPUT"
 

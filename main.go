@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/royalcat/go-continuous-benchmarking/internal/hwinfo"
 	"github.com/royalcat/go-continuous-benchmarking/internal/model"
 	"github.com/royalcat/go-continuous-benchmarking/internal/parse"
 	"github.com/royalcat/go-continuous-benchmarking/internal/storage"
@@ -30,6 +31,7 @@ func main() {
 		commitURL    string
 		maxItems     int
 		repoURL      string
+		cpuModel     string
 	)
 
 	flag.StringVar(&outputFile, "output-file", "", "Path to go test -bench output file (reads stdin if empty)")
@@ -42,6 +44,7 @@ func main() {
 	flag.StringVar(&commitURL, "commit-url", "", "URL to the commit on GitHub")
 	flag.IntVar(&maxItems, "max-items", 0, "Maximum number of benchmark entries per branch (0 = unlimited)")
 	flag.StringVar(&repoURL, "repo-url", "", "Repository URL for display in the frontend header")
+	flag.StringVar(&cpuModel, "cpu-model", "", "CPU model name to record. If empty, auto-detected from the current machine")
 
 	flag.Parse()
 
@@ -52,6 +55,14 @@ func main() {
 	// Default commit date to now.
 	if commitDate == "" {
 		commitDate = time.Now().UTC().Format(time.RFC3339)
+	}
+
+	// Auto-detect CPU model if not explicitly provided.
+	if cpuModel == "" {
+		cpuModel = hwinfo.CPUModel()
+		fmt.Printf("Auto-detected CPU model: %s\n", cpuModel)
+	} else {
+		fmt.Printf("Using provided CPU model: %s\n", cpuModel)
 	}
 
 	// Read benchmark output.
@@ -88,6 +99,7 @@ func main() {
 			URL:     commitURL,
 		},
 		Date:       time.Now().UnixMilli(),
+		CPU:        cpuModel,
 		Benchmarks: benchmarks,
 	}
 

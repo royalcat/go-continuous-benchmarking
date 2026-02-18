@@ -116,8 +116,8 @@ func BenchmarkParse_MultiPackage_10x10(b *testing.B) {
 func BenchmarkParse_SubBenchmarks(b *testing.B) {
 	var sb strings.Builder
 	sb.WriteString("pkg: github.com/test/repo\n")
-	for i := 0; i < 50; i++ {
-		for j := 0; j < 5; j++ {
+	for i := range 50 {
+		for j := range 5 {
 			fmt.Fprintf(&sb,
 				"BenchmarkGroup%d/Case%d-8\t\t%d\t\t%d ns/op\t\t%d B/op\n",
 				i, j, 100000/(j+1), 200+i*10+j, 32+j*16,
@@ -127,7 +127,6 @@ func BenchmarkParse_SubBenchmarks(b *testing.B) {
 	input := sb.String()
 
 	b.ResetTimer()
-	b.ReportAllocs()
 	for b.Loop() {
 		_, err := ParseGoBenchOutput(strings.NewReader(input))
 		if err != nil {
@@ -143,7 +142,7 @@ func BenchmarkParse_WithNoise(b *testing.B) {
 	sb.WriteString("goarch: amd64\n")
 	sb.WriteString("pkg: github.com/test/repo\n")
 	sb.WriteString("cpu: Intel(R) Core(TM) i7-8700 CPU @ 3.20GHz\n")
-	for i := 0; i < 200; i++ {
+	for i := range 200 {
 		// Intersperse log lines and benchmark lines
 		if i%5 == 0 {
 			fmt.Fprintf(&sb, "BenchmarkWork%d-8\t\t%d\t\t%d ns/op\t\t%d B/op\t\t%d allocs/op\n",
@@ -157,7 +156,6 @@ func BenchmarkParse_WithNoise(b *testing.B) {
 	input := sb.String()
 
 	b.ResetTimer()
-	b.ReportAllocs()
 	for b.Loop() {
 		_, err := ParseGoBenchOutput(strings.NewReader(input))
 		if err != nil {
