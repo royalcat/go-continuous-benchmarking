@@ -1,0 +1,229 @@
+name: "Go Continuous Benchmarking"
+description: "Parse Go benchmark output, store results, and publish charts to GitHub Pages"
+author: "royalcat"
+
+branding:
+  icon: "trending-up"
+  color: "blue"
+
+inputs:
+  output-file-path:
+    description: "Path to the file containing go test -bench output"
+    required: true
+
+  branch:
+    description: "Git branch name for organizing results. Defaults to the current branch."
+    required: false
+    default: ""
+
+  gh-pages-branch:
+    description: "Name of the GitHub Pages branch"
+    required: false
+    default: "gh-pages"
+
+  benchmark-data-dir-path:
+    description: "Path within the GitHub Pages branch to store benchmark data and dashboard"
+    required: false
+    default: "dev/bench"
+
+  github-token:
+    description: "GitHub API token for pushing to the gh-pages branch"
+    required: false
+    default: ""
+
+  auto-push:
+    description: "If true, automatically push benchmark results to the gh-pages branch"
+    required: false
+    default: "false"
+
+  max-items-in-chart:
+    description: "Maximum number of data points per branch (0 = unlimited)"
+    required: false
+    default: "0"
+
+  repo-url:
+    description: "Repository URL displayed in the dashboard header. Defaults to the current repository."
+    required: false
+    default: ""
+
+  go-version:
+    description: "Go version to use for building the benchmark tool. If empty, expects Go to be already installed."
+    required: false
+    default: ""
+
+  skip-fetch-gh-pages:
+    description: "If true, skip fetching the gh-pages branch (useful if already checked out)"
+    required: false
+    default: "false"
+
+  fail-on-alert:
+    description: "If true, fail the workflow when a benchmark result exceeds the alert threshold"
+    required: false
+    default: "false"
+
+  alert-threshold:
+    description: "Percentage threshold for performance regression alerts (e.g. '200%')"
+    required: false
+    default: "200%"
+
+outputs:
+  benchmark-results-json:
+    description: "Path to the JSON file with the parsed benchmark results for this run"
+    value: ${{ steps.run-tool.outputs.results-json }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Resolve inputs
+      id: resolve
+      shell: bash
+      run: |
+        # Resolve branch name
+        BRANCH="${{ inputs.branch }}"
+        if [ -z "$BRANCH" ]; then
+          BRANCH="${GITHUB_REF_NAME}"
+        fi
+        echo "branch=${BRANCH}" >> "$GITHUB_OUTPUT"
+
+        # Resolve repo URL
+        REPO_URL="${{ inputs.repo-url }}"
+        if [ -z "$REPO_URL" ]; then
+          REPO_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
+        fi
+        echo "repo-url=${REPO_URL}" >> "$GITHUB_OUTPUT"
+
+        # Resolve commit info
+        echo "commit-sha=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+
+    - name: Get commit details
+      id: commit-info
+      shell: bash
+      run: |
+        COMMIT_MSG=$(git log -1 --format='%s' "$GITHUB_SHA" 2>/dev/null || echo "")
+        COMMIT_AUTHOR=$(git log -1 --format='%an' "$GITHUB_SHA" 2>/dev/null || echo "${GITHUB_ACTOR}")
+        COMMIT_DATE=$(git log -1 --format='%aI' "$GITHUB_SHA" 2>/dev/null || date -u +"%Y-%m-%dT%H:%M:%SZ")
+        COMMIT_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}"
+
+        # Use heredoc for multi-line safety
+        {
+          echo "commit-msg<<GOBENCH_EOF"
+          echo "$COMMIT_MSG"
+          echo "GOBENCH_EOF"
+        } >> "$GITHUB_OUTPUT"
+
+        echo "commit-author=${COMMIT_AUTHOR}" >> "$GITHUB_OUTPUT"
+        echo "commit-date=${COMMIT_DATE}" >> "$GITHUB_OUTPUT"
+        echo "commit-url=${COMMIT_URL}" >> "$GITHUB_OUTPUT"
+
+    - name: Build go-continuous-benchmarking tool
+      id: build-tool
+      shell: bash
+      run: |
+        TOOL_DIR="${{ github.action_path }}"
+        TOOL_BIN="${RUNNER_TEMP}/gobenchdata"
+        cd "$TOOL_DIR"
+        go build -o "$TOOL_BIN" .
+        echo "tool-bin=${TOOL_BIN}" >> "$GITHUB_OUTPUT"
+
+    - name: Fetch gh-pages branch
+      if: inputs.skip-fetch-gh-pages != 'true'
+      shell: bash
+      run: |
+        GH_PAGES_BRANCH="${{ inputs.gh-pages-branch }}"
+
+        # Save current state
+        CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "detached")
+        CURRENT_SHA=$(git rev-parse HEAD)
+
+        echo "current-branch=${CURRENT_BRANCH}" >> "$GITHUB_ENV"
+        echo "current-sha=${CURRENT_SHA}" >> "$GITHUB_ENV"
+
+        # Try to fetch the gh-pages branch. It may not exist yet.
+        git fetch origin "${GH_PAGES_BRANCH}:${GH_PAGES_BRANCH}" 2>/dev/null || true
+
+    - name: Checkout gh-pages and run tool
+      id: run-tool
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        GH_PAGES_BRANCH="${{ inputs.gh-pages-branch }}"
+        DATA_DIR="${{ inputs.benchmark-data-dir-path }}"
+        TOOL_BIN="${{ steps.build-tool.outputs.tool-bin }}"
+        OUTPUT_FILE="${{ inputs.output-file-path }}"
+        BRANCH="${{ steps.resolve.outputs.branch }}"
+        MAX_ITEMS="${{ inputs.max-items-in-chart }}"
+        REPO_URL="${{ steps.resolve.outputs.repo-url }}"
+
+        # Make output file path absolute before switching branches
+        OUTPUT_FILE_ABS="$(cd "$(dirname "$OUTPUT_FILE")" && pwd)/$(basename "$OUTPUT_FILE")"
+
+        # Remember working tree
+        ORIG_SHA=$(git rev-parse HEAD)
+
+        # Check if gh-pages branch exists
+        if git rev-parse --verify "${GH_PAGES_BRANCH}" >/dev/null 2>&1; then
+          git checkout "${GH_PAGES_BRANCH}"
+        else
+          # Create orphan gh-pages branch
+          git checkout --orphan "${GH_PAGES_BRANCH}"
+          git rm -rf . 2>/dev/null || true
+          git commit --allow-empty -m "Initialize GitHub Pages branch for benchmarks"
+        fi
+
+        # Ensure data directory exists
+        mkdir -p "${DATA_DIR}"
+
+        # Run the benchmark tool
+        MAX_ITEMS_FLAG=""
+        if [ "$MAX_ITEMS" != "0" ] && [ -n "$MAX_ITEMS" ]; then
+          MAX_ITEMS_FLAG="-max-items=${MAX_ITEMS}"
+        fi
+
+        "$TOOL_BIN" \
+          -output-file="${OUTPUT_FILE_ABS}" \
+          -branch="${BRANCH}" \
+          -data-dir="${DATA_DIR}" \
+          -commit-sha="${{ steps.resolve.outputs.commit-sha }}" \
+          -commit-msg="${{ steps.commit-info.outputs.commit-msg }}" \
+          -commit-author="${{ steps.commit-info.outputs.commit-author }}" \
+          -commit-date="${{ steps.commit-info.outputs.commit-date }}" \
+          -commit-url="${{ steps.commit-info.outputs.commit-url }}" \
+          -repo-url="${REPO_URL}" \
+          ${MAX_ITEMS_FLAG}
+
+        echo "results-json=${DATA_DIR}/data/$(echo "${BRANCH}" | sed 's/[\/\\:*?"<>|]/_/g').json" >> "$GITHUB_OUTPUT"
+
+    - name: Commit and push to gh-pages
+      if: inputs.auto-push == 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        GH_PAGES_BRANCH="${{ inputs.gh-pages-branch }}"
+        DATA_DIR="${{ inputs.benchmark-data-dir-path }}"
+        BRANCH="${{ steps.resolve.outputs.branch }}"
+        SHORT_SHA=$(echo "${{ steps.resolve.outputs.commit-sha }}" | cut -c1-7)
+        GITHUB_TOKEN="${{ inputs.github-token }}"
+
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+
+        git add "${DATA_DIR}"
+        git commit -m "Update benchmarks for ${BRANCH} (${SHORT_SHA})" || echo "No changes to commit"
+
+        if [ -n "$GITHUB_TOKEN" ]; then
+          REMOTE_URL="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git push "$REMOTE_URL" "${GH_PAGES_BRANCH}" 2>/dev/null
+        else
+          git push origin "${GH_PAGES_BRANCH}"
+        fi
+
+    - name: Switch back to original branch
+      if: always()
+      shell: bash
+      run: |
+        ORIG_SHA="${current_sha:-}"
+        if [ -n "$ORIG_SHA" ]; then
+          git checkout --force "$ORIG_SHA" 2>/dev/null || true
+        fi

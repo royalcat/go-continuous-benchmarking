@@ -1,0 +1,114 @@
+package parse
+
+import (
+	"bufio"
+	"fmt"
+	"io"
+	"regexp"
+	"strconv"
+	"strings"
+
+	"github.com/royalcat/go-continuous-benchmarking/internal/model"
+)
+
+// reGoBench matches Go benchmark result lines.
+// Format: BenchmarkName-PROCS  iterations  value unit [value unit ...]
+// Reference: https://go.googlesource.com/proposal/+/master/design/14313-benchmark-format.md
+var reGoBench = regexp.MustCompile(
+	`^(?P<name>Benchmark\S+?)(?:-(?P<procs>\d+))?\s+(?P<iters>\d+)\s+(?P<rest>.+)$`,
+)
+
+// rePkgLine matches the "pkg: ..." line that precedes benchmark output for a package.
+var rePkgLine = regexp.MustCompile(`^pkg:\s+(\S+)`)
+
+// ParseGoBenchOutput parses the output of `go test -bench` and returns a slice
+// of BenchmarkResult. It handles multiple packages, multiple metrics per benchmark,
+// and the standard Go benchmark output format.
+func ParseGoBenchOutput(r io.Reader) ([]model.BenchmarkResult, error) {
+	scanner := bufio.NewScanner(r)
+
+	var results []model.BenchmarkResult
+	var currentPkg string
+	packages := make(map[string]bool)
+
+	// First pass: collect all package names to determine if we have multiple packages.
+	var lines []string
+	for scanner.Scan() {
+		line := scanner.Text()
+		lines = append(lines, line)
+		if m := rePkgLine.FindStringSubmatch(line); m != nil {
+			packages[m[1]] = true
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("reading benchmark output: %w", err)
+	}
+
+	multiPkg := len(packages) > 1
+
+	for _, line := range lines {
+		// Track current package.
+		if m := rePkgLine.FindStringSubmatch(line); m != nil {
+			currentPkg = m[1]
+			continue
+		}
+
+		m := reGoBench.FindStringSubmatch(line)
+		if m == nil {
+			continue
+		}
+
+		name := m[1]
+		procs := m[2]
+		iters := m[3]
+		rest := m[4]
+
+		extra := iters + " times"
+		if procs != "" {
+			extra += "\n" + procs + " procs"
+		}
+
+		// Parse value/unit pairs from the remainder.
+		// The remainder looks like: "41653 ns/op  128 B/op  2 allocs/op"
+		fields := strings.Fields(rest)
+		if len(fields) < 2 || len(fields)%2 != 0 {
+			continue // malformed line, skip
+		}
+
+		pairs := make([][2]string, 0, len(fields)/2)
+		for i := 0; i < len(fields); i += 2 {
+			pairs = append(pairs, [2]string{fields[i], fields[i+1]})
+		}
+
+		baseName := name
+		if multiPkg && currentPkg != "" {
+			baseName = name + " (" + currentPkg + ")"
+		}
+
+		for i, pair := range pairs {
+			val, err := strconv.ParseFloat(pair[0], 64)
+			if err != nil {
+				continue // skip unparseable values
+			}
+			unit := pair[1]
+
+			resultName := baseName
+			if i > 0 {
+				resultName = baseName + " - " + unit
+			}
+
+			results = append(results, model.BenchmarkResult{
+				Name:  resultName,
+				Value: val,
+				Unit:  unit,
+				Extra: extra,
+			})
+		}
+	}
+
+	if len(results) == 0 {
+		return nil, fmt.Errorf("no benchmark results found in output")
+	}
+
+	return results, nil
+}

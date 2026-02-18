@@ -1,0 +1,33 @@
+# Go binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+gobenchdata
+
+# Test binary
+*.test
+
+# Output of go coverage
+*.out
+*.prof
+
+# Go workspace
+go.work
+go.work.sum
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Build output
+/dist/
+/bin/
