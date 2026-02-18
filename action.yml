@@ -158,6 +158,10 @@ runs:
         # Make output file path absolute before switching branches
         OUTPUT_FILE_ABS="$(cd "$(dirname "$OUTPUT_FILE")" && pwd)/$(basename "$OUTPUT_FILE")"
 
+        # Configure git identity early (needed if we create an orphan branch)
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+
         # Remember working tree
         ORIG_SHA=$(git rev-parse HEAD)
 
@@ -205,9 +209,6 @@ runs:
         BRANCH="${{ steps.resolve.outputs.branch }}"
         SHORT_SHA=$(echo "${{ steps.resolve.outputs.commit-sha }}" | cut -c1-7)
         GITHUB_TOKEN="${{ inputs.github-token }}"
-
-        git config user.name "github-actions[bot]"
-        git config user.email "github-actions[bot]@users.noreply.github.com"
 
         git add "${DATA_DIR}"
         git commit -m "Update benchmarks for ${BRANCH} (${SHORT_SHA})" || echo "No changes to commit"
