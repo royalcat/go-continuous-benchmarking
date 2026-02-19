@@ -268,6 +268,28 @@
       return d.bench.value;
     });
     var unit = dataset.length > 0 ? dataset[0].bench.unit : "";
+    var displayUnit = unit;
+    var scaleFactor = 1;
+
+    // Convert B/op to human-readable SI units based on max value
+    if (unit === "B/op") {
+      var maxVal = values.length > 0 ? Math.max.apply(null, values) : 0;
+      if (maxVal >= 1e9) {
+        scaleFactor = 1e9;
+        displayUnit = "GB/op";
+      } else if (maxVal >= 1e6) {
+        scaleFactor = 1e6;
+        displayUnit = "MB/op";
+      } else if (maxVal >= 1e3) {
+        scaleFactor = 1e3;
+        displayUnit = "KB/op";
+      }
+      if (scaleFactor > 1) {
+        values = values.map(function (v) {
+          return v / scaleFactor;
+        });
+      }
+    }
 
     // Compute min value for log scale clipping
     var positiveValues = values.filter(function (v) {
@@ -330,7 +352,7 @@
             type: hasZeros ? "linear" : "logarithmic",
             title: {
               display: true,
-              text: unit,
+              text: displayUnit,
               color: textColor,
             },
             min: hasZeros ? 0 : logMin,
@@ -371,9 +393,7 @@
                 return lines.join("\n");
               },
               label: function (item) {
-                var idx = item.dataIndex;
-                var d = dataset[idx];
-                return item.formattedValue + " " + d.bench.unit;
+                return item.formattedValue + " " + displayUnit;
               },
               afterLabel: function (item) {
                 var idx = item.dataIndex;
