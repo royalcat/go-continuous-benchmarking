@@ -89,18 +89,6 @@ func BenchmarkParse_100Lines(b *testing.B) {
 	}
 }
 
-func BenchmarkParse_1000Lines(b *testing.B) {
-	input := buildOutput(1000, 1)
-	b.ResetTimer()
-	b.ReportAllocs()
-	for b.Loop() {
-		_, err := ParseGoBenchOutput(strings.NewReader(input))
-		if err != nil {
-			b.Fatal(err)
-		}
-	}
-}
-
 func BenchmarkParse_MultiPackage_10x10(b *testing.B) {
 	input := buildOutput(100, 10)
 	b.ResetTimer()

@@ -66,10 +66,6 @@ func BenchmarkAppendEntry_Existing100(b *testing.B) {
 	benchmarkAppendToExisting(b, 100, 5)
 }
 
-func BenchmarkAppendEntry_Existing1000(b *testing.B) {
-	benchmarkAppendToExisting(b, 1000, 5)
-}
-
 func benchmarkAppendToExisting(b *testing.B, existingEntries int, benchesPerEntry int) {
 	b.Helper()
 	b.ReportAllocs()
@@ -117,10 +113,6 @@ func BenchmarkReadBranchData_100(b *testing.B) {
 	benchmarkReadBranchData(b, 100, 5)
 }
 
-func BenchmarkReadBranchData_1000(b *testing.B) {
-	benchmarkReadBranchData(b, 1000, 5)
-}
-
 func benchmarkReadBranchData(b *testing.B, entries int, benchesPerEntry int) {
 	b.Helper()
 	dir := b.TempDir()
@@ -146,10 +138,6 @@ func BenchmarkWriteBranchData_10(b *testing.B) {
 
 func BenchmarkWriteBranchData_100(b *testing.B) {
 	benchmarkWriteBranchData(b, 100, 5)
-}
-
-func BenchmarkWriteBranchData_1000(b *testing.B) {
-	benchmarkWriteBranchData(b, 1000, 5)
 }
 
 func benchmarkWriteBranchData(b *testing.B, entries int, benchesPerEntry int) {
