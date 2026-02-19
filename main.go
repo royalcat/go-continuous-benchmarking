@@ -224,7 +224,7 @@ func runStore(args []string) {
 
 	fs.StringVar(&entriesGlob, "entries", "", "Glob or comma-separated paths to entry.json files (required)")
 	fs.StringVar(&branch, "branch", "main", "Git branch name")
-	fs.StringVar(&dataDir, "data-dir", "dev/bench", "Directory to store benchmark data and frontend files")
+	fs.StringVar(&dataDir, "data-dir", "benchmarks", "Directory to store benchmark data and frontend files")
 	fs.IntVar(&maxItems, "max-items", 0, "Maximum number of benchmark entries per branch (0 = unlimited)")
 	fs.StringVar(&repoURL, "repo-url", "", "Repository URL for the frontend header")
 	fs.StringVar(&goModule, "go-module", "", "Go module path for the frontend")

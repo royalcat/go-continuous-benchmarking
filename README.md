@@ -66,7 +66,7 @@ jobs:
 After the first run, your benchmark dashboard will be available at:
 
 ```
-https://<user>.github.io/<repo>/dev/bench/
+https://<user>.github.io/<repo>/benchmarks/
 ```
 
 ## Action Inputs
@@ -76,7 +76,7 @@ https://<user>.github.io/<repo>/dev/bench/
 | `output-file-path` | **Yes** | — | Path to the file containing `go test -bench` output |
 | `branch` | No | Current branch (`GITHUB_REF_NAME`) | Branch name for organizing results |
 | `gh-pages-branch` | No | `gh-pages` | Name of the GitHub Pages branch |
-| `benchmark-data-dir-path` | No | `dev/bench` | Path within the Pages branch for benchmark data and dashboard |
+| `benchmark-data-dir-path` | No | `benchmarks` | Path within the Pages branch for benchmark data and dashboard |
 | `github-token` | No | — | GitHub API token for pushing to the Pages branch |
 | `auto-push` | No | `false` | Automatically push results to the Pages branch |
 | `max-items-in-chart` | No | `0` | Maximum data points per branch (0 = unlimited) |
@@ -94,7 +94,7 @@ https://<user>.github.io/<repo>/dev/bench/
 ### Directory layout on the `gh-pages` branch
 
 ```
-dev/bench/
+benchmarks/
 ├── index.html          # Dashboard page (auto-generated)
 ├── app.js              # Chart.js frontend (auto-generated)
 ├── metadata.json       # Repository URL and last update timestamp
@@ -216,7 +216,7 @@ go test -bench=. -benchmem ./... > bench-output.txt
 |---|---|---|
 | `-output-file` | stdin | Path to benchmark output file (reads stdin if empty) |
 | `-branch` | `main` | Git branch name |
-| `-data-dir` | `dev/bench` | Directory for benchmark data and frontend files |
+| `-data-dir` | `benchmarks` | Directory for benchmark data and frontend files |
 | `-commit-sha` | **(required)** | Commit SHA |
 | `-commit-msg` | `""` | Commit message |
 | `-commit-author` | `""` | Commit author |

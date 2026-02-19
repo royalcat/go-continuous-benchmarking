@@ -64,7 +64,7 @@ inputs:
   benchmark-data-dir-path:
     description: "[store] Path within the GitHub Pages branch to store benchmark data and dashboard."
     required: false
-    default: "dev/bench"
+    default: "benchmarks"
 
   github-token:
     description: "[store] GitHub API token for pushing to the gh-pages branch."
