@@ -10,13 +10,13 @@ permissions:
 
 jobs:
   benchmark:
-    name: Benchmark (${{ matrix.os }}, CGO=${{ matrix.cgo }})
+    name: Benchmark (${{ matrix.os }}, GO=${{ matrix.go }}, CGO=${{ matrix.cgo }})
     strategy:
       fail-fast: false
       matrix:
         os: ["ubuntu-24.04", "ubuntu-24.04-arm"]
-        cgo: [0, 1]
         go: ["1.24", "1.25"]
+        cgo: [0, 1]
     runs-on: ${{ matrix.os }}
     env:
       CGO_ENABLED: ${{ matrix.cgo }}
