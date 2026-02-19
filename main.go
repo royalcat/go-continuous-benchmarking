@@ -165,6 +165,12 @@ func runParse(args []string) {
 
 	// --- Build BenchmarkEntry ---
 
+	// Parse commit date to use as the entry timestamp instead of the current time.
+	commitTime, err := time.Parse(time.RFC3339, commitDate)
+	if err != nil {
+		log.Fatalf("Error parsing commit date %q: %v", commitDate, err)
+	}
+
 	entry := model.BenchmarkEntry{
 		Commit: model.Commit{
 			SHA:     commitSHA,
@@ -173,7 +179,7 @@ func runParse(args []string) {
 			Date:    commitDate,
 			URL:     commitURL,
 		},
-		Date:       time.Now().UnixMilli(),
+		Date:       commitTime.UnixMilli(),
 		CPU:        cpu,
 		GOOS:       goos,
 		GOARCH:     goarch,

@@ -13,6 +13,20 @@ import (
 	"github.com/royalcat/go-continuous-benchmarking/internal/model"
 )
 
+// sortByCommitDate sorts entries by their Commit.Date field (RFC 3339 string).
+// Entries with unparseable dates are placed at the beginning.
+func sortByCommitDate(entries model.BranchData) {
+	sort.SliceStable(entries, func(i, j int) bool {
+		ti, erri := time.Parse(time.RFC3339, entries[i].Commit.Date)
+		tj, errj := time.Parse(time.RFC3339, entries[j].Commit.Date)
+		if erri != nil || errj != nil {
+			// Fall back to the Date (unix millis) field when parsing fails.
+			return entries[i].Date < entries[j].Date
+		}
+		return ti.Before(tj)
+	})
+}
+
 // Storage manages benchmark data files on disk.
 // The layout on disk is:
 //
@@ -167,6 +181,10 @@ func (s *Storage) AppendEntry(branch string, entry model.BenchmarkEntry, maxItem
 // read-modify-write cycle. This is more efficient than calling AppendEntry in a
 // loop when processing multiple output files (e.g. from a matrix build).
 //
+// Entries are keyed by (commit SHA, CPU model, CGO status). If a new entry
+// has the same key as an existing one, the old entry is replaced. After
+// merging, entries are sorted by commit date.
+//
 // If maxItems > 0, the oldest entries are trimmed so that at most maxItems
 // entries remain per branch after all new entries have been appended.
 func (s *Storage) AppendEntries(branch string, newEntries []model.BenchmarkEntry, maxItems int) error {
@@ -185,15 +203,32 @@ func (s *Storage) AppendEntries(branch string, newEntries []model.BenchmarkEntry
 		return err
 	}
 
-	// Append all new entries.
-	entries = append(entries, newEntries...)
-
-	// Trim old entries if maxItems is set.
-	if maxItems > 0 && len(entries) > maxItems {
-		entries = entries[len(entries)-maxItems:]
+	// Build a set of new entry keys for fast lookup.
+	newKeys := make(map[string]struct{}, len(newEntries))
+	for _, e := range newEntries {
+		newKeys[e.EntryKey()] = struct{}{}
 	}
 
-	return s.WriteBranchData(branch, entries)
+	// Remove existing entries whose key matches a new entry (replace semantics).
+	filtered := entries[:0]
+	for _, e := range entries {
+		if _, dup := newKeys[e.EntryKey()]; !dup {
+			filtered = append(filtered, e)
+		}
+	}
+
+	// Append all new entries.
+	filtered = append(filtered, newEntries...)
+
+	// Sort by commit date so the timeline is always chronological.
+	sortByCommitDate(filtered)
+
+	// Trim old entries if maxItems is set.
+	if maxItems > 0 && len(filtered) > maxItems {
+		filtered = filtered[len(filtered)-maxItems:]
+	}
+
+	return s.WriteBranchData(branch, filtered)
 }
 
 // --------------------------------------------------------------------------

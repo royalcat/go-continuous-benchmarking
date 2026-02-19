@@ -226,15 +226,15 @@ func TestAppendEntry(t *testing.T) {
 	}
 
 	entry1 := model.BenchmarkEntry{
-		Commit: model.Commit{SHA: "aaa111", Message: "first"},
-		Date:   1000,
+		Commit: model.Commit{SHA: "aaa111", Message: "first", Date: "2024-01-01T00:00:00Z"},
+		Date:   1704067200000,
 		Benchmarks: []model.BenchmarkResult{
 			{Name: "BenchFoo", Value: 100, Unit: "ns/op"},
 		},
 	}
 	entry2 := model.BenchmarkEntry{
-		Commit: model.Commit{SHA: "bbb222", Message: "second"},
-		Date:   2000,
+		Commit: model.Commit{SHA: "bbb222", Message: "second", Date: "2024-01-02T00:00:00Z"},
+		Date:   1704153600000,
 		Benchmarks: []model.BenchmarkResult{
 			{Name: "BenchFoo", Value: 90, Unit: "ns/op"},
 		},
@@ -281,8 +281,11 @@ func TestAppendEntry_MaxItems(t *testing.T) {
 
 	for i := 0; i < 5; i++ {
 		entry := model.BenchmarkEntry{
-			Commit: model.Commit{SHA: string(rune('a'+i)) + "00"},
-			Date:   int64(i * 1000),
+			Commit: model.Commit{
+				SHA:  string(rune('a'+i)) + "00",
+				Date: "2024-01-0" + string(rune('1'+i)) + "T00:00:00Z",
+			},
+			Date: int64(i * 1000),
 			Benchmarks: []model.BenchmarkResult{
 				{Name: "Bench", Value: float64(i * 100), Unit: "ns/op"},
 			},
@@ -317,13 +320,13 @@ func TestAppendEntry_MultipleBranches(t *testing.T) {
 	}
 
 	entryA := model.BenchmarkEntry{
-		Commit:     model.Commit{SHA: "aaa"},
-		Date:       1000,
+		Commit:     model.Commit{SHA: "aaa", Date: "2024-01-01T00:00:00Z"},
+		Date:       1704067200000,
 		Benchmarks: []model.BenchmarkResult{{Name: "B", Value: 1, Unit: "ns/op"}},
 	}
 	entryB := model.BenchmarkEntry{
-		Commit:     model.Commit{SHA: "bbb"},
-		Date:       2000,
+		Commit:     model.Commit{SHA: "bbb", Date: "2024-01-02T00:00:00Z"},
+		Date:       1704153600000,
 		Benchmarks: []model.BenchmarkResult{{Name: "B", Value: 2, Unit: "ns/op"}},
 	}
 
@@ -367,8 +370,8 @@ func TestBranchDataPath_Sanitization(t *testing.T) {
 	}
 
 	entry := model.BenchmarkEntry{
-		Commit:     model.Commit{SHA: "ccc"},
-		Date:       3000,
+		Commit:     model.Commit{SHA: "ccc", Date: "2024-01-01T00:00:00Z"},
+		Date:       1704067200000,
 		Benchmarks: []model.BenchmarkResult{{Name: "B", Value: 1, Unit: "ns/op"}},
 	}
 
@@ -518,5 +521,545 @@ func TestBranchData_JSONRoundTrip(t *testing.T) {
 		if got.Benchmarks[i].Extra != want.Benchmarks[i].Extra {
 			t.Errorf("Benchmark[%d].Extra: got %q, want %q", i, got.Benchmarks[i].Extra, want.Benchmarks[i].Extra)
 		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Deduplication tests
+// ---------------------------------------------------------------------------
+
+func TestAppendEntry_ReplacesExistingWithSameKey(t *testing.T) {
+	dir := t.TempDir()
+	s, err := New(dir)
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	// First entry for commit abc with CPU "Intel Xeon" and CGO true.
+	entry1 := model.BenchmarkEntry{
+		Commit: model.Commit{SHA: "abc123", Message: "first run", Date: "2024-01-01T00:00:00Z"},
+		Date:   1704067200000,
+		CPU:    "Intel Xeon",
+		CGO:    true,
+		Benchmarks: []model.BenchmarkResult{
+			{Name: "BenchFoo", Value: 100, Unit: "ns/op"},
+		},
+	}
+
+	// Second entry for the SAME commit+cpu+cgo — should replace.
+	entry2 := model.BenchmarkEntry{
+		Commit: model.Commit{SHA: "abc123", Message: "re-run", Date: "2024-01-01T00:00:00Z"},
+		Date:   1704067200000,
+		CPU:    "Intel Xeon",
+		CGO:    true,
+		Benchmarks: []model.BenchmarkResult{
+			{Name: "BenchFoo", Value: 42, Unit: "ns/op"},
+		},
+	}
+
+	if err := s.AppendEntry("main", entry1, 0); err != nil {
+		t.Fatalf("AppendEntry(1) error: %v", err)
+	}
+	if err := s.AppendEntry("main", entry2, 0); err != nil {
+		t.Fatalf("AppendEntry(2) error: %v", err)
+	}
+
+	data, err := s.ReadBranchData("main")
+	if err != nil {
+		t.Fatalf("ReadBranchData() error: %v", err)
+	}
+
+	if len(data) != 1 {
+		t.Fatalf("expected 1 entry after replacement, got %d", len(data))
+	}
+	if data[0].Benchmarks[0].Value != 42 {
+		t.Errorf("expected replaced value 42, got %f", data[0].Benchmarks[0].Value)
+	}
+	if data[0].Commit.Message != "re-run" {
+		t.Errorf("expected replaced message %q, got %q", "re-run", data[0].Commit.Message)
+	}
+}
+
+func TestAppendEntry_DifferentCPU_NoReplace(t *testing.T) {
+	dir := t.TempDir()
+	s, err := New(dir)
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	entry1 := model.BenchmarkEntry{
+		Commit: model.Commit{SHA: "abc123", Date: "2024-01-01T00:00:00Z"},
+		Date:   1704067200000,
+		CPU:    "Intel Xeon",
+		CGO:    true,
+		Benchmarks: []model.BenchmarkResult{
+			{Name: "BenchFoo", Value: 100, Unit: "ns/op"},
+		},
+	}
+
+	entry2 := model.BenchmarkEntry{
+		Commit: model.Commit{SHA: "abc123", Date: "2024-01-01T00:00:00Z"},
+		Date:   1704067200000,
+		CPU:    "AMD Ryzen",
+		CGO:    true,
+		Benchmarks: []model.BenchmarkResult{
+			{Name: "BenchFoo", Value: 80, Unit: "ns/op"},
+		},
+	}
+
+	if err := s.AppendEntry("main", entry1, 0); err != nil {
+		t.Fatalf("AppendEntry(1) error: %v", err)
+	}
+	if err := s.AppendEntry("main", entry2, 0); err != nil {
+		t.Fatalf("AppendEntry(2) error: %v", err)
+	}
+
+	data, err := s.ReadBranchData("main")
+	if err != nil {
+		t.Fatalf("ReadBranchData() error: %v", err)
+	}
+
+	if len(data) != 2 {
+		t.Fatalf("expected 2 entries (different CPU), got %d", len(data))
+	}
+}
+
+func TestAppendEntry_DifferentCGO_NoReplace(t *testing.T) {
+	dir := t.TempDir()
+	s, err := New(dir)
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	entry1 := model.BenchmarkEntry{
+		Commit: model.Commit{SHA: "abc123", Date: "2024-01-01T00:00:00Z"},
+		Date:   1704067200000,
+		CPU:    "Intel Xeon",
+		CGO:    true,
+		Benchmarks: []model.BenchmarkResult{
+			{Name: "BenchFoo", Value: 100, Unit: "ns/op"},
+		},
+	}
+
+	entry2 := model.BenchmarkEntry{
+		Commit: model.Commit{SHA: "abc123", Date: "2024-01-01T00:00:00Z"},
+		Date:   1704067200000,
+		CPU:    "Intel Xeon",
+		CGO:    false,
+		Benchmarks: []model.BenchmarkResult{
+			{Name: "BenchFoo", Value: 120, Unit: "ns/op"},
+		},
+	}
+
+	if err := s.AppendEntry("main", entry1, 0); err != nil {
+		t.Fatalf("AppendEntry(1) error: %v", err)
+	}
+	if err := s.AppendEntry("main", entry2, 0); err != nil {
+		t.Fatalf("AppendEntry(2) error: %v", err)
+	}
+
+	data, err := s.ReadBranchData("main")
+	if err != nil {
+		t.Fatalf("ReadBranchData() error: %v", err)
+	}
+
+	if len(data) != 2 {
+		t.Fatalf("expected 2 entries (different CGO), got %d", len(data))
+	}
+}
+
+func TestAppendEntry_DifferentCommit_NoReplace(t *testing.T) {
+	dir := t.TempDir()
+	s, err := New(dir)
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	entry1 := model.BenchmarkEntry{
+		Commit: model.Commit{SHA: "abc123", Date: "2024-01-01T00:00:00Z"},
+		Date:   1704067200000,
+		CPU:    "Intel Xeon",
+		CGO:    true,
+		Benchmarks: []model.BenchmarkResult{
+			{Name: "BenchFoo", Value: 100, Unit: "ns/op"},
+		},
+	}
+
+	entry2 := model.BenchmarkEntry{
+		Commit: model.Commit{SHA: "def456", Date: "2024-01-02T00:00:00Z"},
+		Date:   1704153600000,
+		CPU:    "Intel Xeon",
+		CGO:    true,
+		Benchmarks: []model.BenchmarkResult{
+			{Name: "BenchFoo", Value: 90, Unit: "ns/op"},
+		},
+	}
+
+	if err := s.AppendEntry("main", entry1, 0); err != nil {
+		t.Fatalf("AppendEntry(1) error: %v", err)
+	}
+	if err := s.AppendEntry("main", entry2, 0); err != nil {
+		t.Fatalf("AppendEntry(2) error: %v", err)
+	}
+
+	data, err := s.ReadBranchData("main")
+	if err != nil {
+		t.Fatalf("ReadBranchData() error: %v", err)
+	}
+
+	if len(data) != 2 {
+		t.Fatalf("expected 2 entries (different commit), got %d", len(data))
+	}
+}
+
+func TestAppendEntries_BatchReplace(t *testing.T) {
+	dir := t.TempDir()
+	s, err := New(dir)
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	// Seed with initial entries.
+	initial := []model.BenchmarkEntry{
+		{
+			Commit:     model.Commit{SHA: "aaa", Date: "2024-01-01T00:00:00Z"},
+			Date:       1704067200000,
+			CPU:        "cpu1",
+			CGO:        true,
+			Benchmarks: []model.BenchmarkResult{{Name: "B", Value: 1, Unit: "ns/op"}},
+		},
+		{
+			Commit:     model.Commit{SHA: "bbb", Date: "2024-01-02T00:00:00Z"},
+			Date:       1704153600000,
+			CPU:        "cpu1",
+			CGO:        true,
+			Benchmarks: []model.BenchmarkResult{{Name: "B", Value: 2, Unit: "ns/op"}},
+		},
+	}
+	if err := s.AppendEntries("main", initial, 0); err != nil {
+		t.Fatalf("initial AppendEntries error: %v", err)
+	}
+
+	// Replace the first entry and add a new third one.
+	updates := []model.BenchmarkEntry{
+		{
+			Commit:     model.Commit{SHA: "aaa", Date: "2024-01-01T00:00:00Z"},
+			Date:       1704067200000,
+			CPU:        "cpu1",
+			CGO:        true,
+			Benchmarks: []model.BenchmarkResult{{Name: "B", Value: 999, Unit: "ns/op"}},
+		},
+		{
+			Commit:     model.Commit{SHA: "ccc", Date: "2024-01-03T00:00:00Z"},
+			Date:       1704240000000,
+			CPU:        "cpu1",
+			CGO:        true,
+			Benchmarks: []model.BenchmarkResult{{Name: "B", Value: 3, Unit: "ns/op"}},
+		},
+	}
+	if err := s.AppendEntries("main", updates, 0); err != nil {
+		t.Fatalf("update AppendEntries error: %v", err)
+	}
+
+	data, err := s.ReadBranchData("main")
+	if err != nil {
+		t.Fatalf("ReadBranchData() error: %v", err)
+	}
+
+	if len(data) != 3 {
+		t.Fatalf("expected 3 entries, got %d", len(data))
+	}
+
+	// Verify the replaced entry has the new value.
+	if data[0].Commit.SHA != "aaa" {
+		t.Errorf("first entry SHA: got %q, want %q", data[0].Commit.SHA, "aaa")
+	}
+	if data[0].Benchmarks[0].Value != 999 {
+		t.Errorf("first entry value: got %f, want 999", data[0].Benchmarks[0].Value)
+	}
+
+	// Verify the untouched entry is still there.
+	if data[1].Commit.SHA != "bbb" {
+		t.Errorf("second entry SHA: got %q, want %q", data[1].Commit.SHA, "bbb")
+	}
+	if data[1].Benchmarks[0].Value != 2 {
+		t.Errorf("second entry value: got %f, want 2", data[1].Benchmarks[0].Value)
+	}
+
+	// Verify the new entry was added.
+	if data[2].Commit.SHA != "ccc" {
+		t.Errorf("third entry SHA: got %q, want %q", data[2].Commit.SHA, "ccc")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Commit-date sorting tests
+// ---------------------------------------------------------------------------
+
+func TestAppendEntry_SortedByCommitDate(t *testing.T) {
+	dir := t.TempDir()
+	s, err := New(dir)
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	// Insert entries out of chronological order.
+	entries := []model.BenchmarkEntry{
+		{
+			Commit:     model.Commit{SHA: "ccc", Date: "2024-01-03T00:00:00Z"},
+			Date:       1704240000000,
+			CPU:        "cpu1",
+			CGO:        true,
+			Benchmarks: []model.BenchmarkResult{{Name: "B", Value: 3, Unit: "ns/op"}},
+		},
+		{
+			Commit:     model.Commit{SHA: "aaa", Date: "2024-01-01T00:00:00Z"},
+			Date:       1704067200000,
+			CPU:        "cpu1",
+			CGO:        true,
+			Benchmarks: []model.BenchmarkResult{{Name: "B", Value: 1, Unit: "ns/op"}},
+		},
+		{
+			Commit:     model.Commit{SHA: "bbb", Date: "2024-01-02T00:00:00Z"},
+			Date:       1704153600000,
+			CPU:        "cpu1",
+			CGO:        true,
+			Benchmarks: []model.BenchmarkResult{{Name: "B", Value: 2, Unit: "ns/op"}},
+		},
+	}
+
+	if err := s.AppendEntries("main", entries, 0); err != nil {
+		t.Fatalf("AppendEntries error: %v", err)
+	}
+
+	data, err := s.ReadBranchData("main")
+	if err != nil {
+		t.Fatalf("ReadBranchData() error: %v", err)
+	}
+
+	if len(data) != 3 {
+		t.Fatalf("expected 3 entries, got %d", len(data))
+	}
+
+	// Should be sorted chronologically by commit date.
+	if data[0].Commit.SHA != "aaa" {
+		t.Errorf("entry[0] SHA: got %q, want %q", data[0].Commit.SHA, "aaa")
+	}
+	if data[1].Commit.SHA != "bbb" {
+		t.Errorf("entry[1] SHA: got %q, want %q", data[1].Commit.SHA, "bbb")
+	}
+	if data[2].Commit.SHA != "ccc" {
+		t.Errorf("entry[2] SHA: got %q, want %q", data[2].Commit.SHA, "ccc")
+	}
+}
+
+func TestAppendEntry_SortedAfterReplace(t *testing.T) {
+	dir := t.TempDir()
+	s, err := New(dir)
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	// Insert in correct order initially.
+	for _, e := range []model.BenchmarkEntry{
+		{
+			Commit:     model.Commit{SHA: "aaa", Date: "2024-01-01T00:00:00Z"},
+			Date:       1704067200000,
+			CPU:        "cpu1",
+			Benchmarks: []model.BenchmarkResult{{Name: "B", Value: 1, Unit: "ns/op"}},
+		},
+		{
+			Commit:     model.Commit{SHA: "bbb", Date: "2024-01-02T00:00:00Z"},
+			Date:       1704153600000,
+			CPU:        "cpu1",
+			Benchmarks: []model.BenchmarkResult{{Name: "B", Value: 2, Unit: "ns/op"}},
+		},
+		{
+			Commit:     model.Commit{SHA: "ccc", Date: "2024-01-03T00:00:00Z"},
+			Date:       1704240000000,
+			CPU:        "cpu1",
+			Benchmarks: []model.BenchmarkResult{{Name: "B", Value: 3, Unit: "ns/op"}},
+		},
+	} {
+		if err := s.AppendEntry("main", e, 0); err != nil {
+			t.Fatalf("AppendEntry error: %v", err)
+		}
+	}
+
+	// Now replace bbb with updated value. Order should be preserved.
+	replacement := model.BenchmarkEntry{
+		Commit:     model.Commit{SHA: "bbb", Date: "2024-01-02T00:00:00Z"},
+		Date:       1704153600000,
+		CPU:        "cpu1",
+		Benchmarks: []model.BenchmarkResult{{Name: "B", Value: 999, Unit: "ns/op"}},
+	}
+	if err := s.AppendEntry("main", replacement, 0); err != nil {
+		t.Fatalf("replace AppendEntry error: %v", err)
+	}
+
+	data, err := s.ReadBranchData("main")
+	if err != nil {
+		t.Fatalf("ReadBranchData() error: %v", err)
+	}
+
+	if len(data) != 3 {
+		t.Fatalf("expected 3 entries, got %d", len(data))
+	}
+
+	// Verify order is maintained.
+	expectedSHAs := []string{"aaa", "bbb", "ccc"}
+	for i, sha := range expectedSHAs {
+		if data[i].Commit.SHA != sha {
+			t.Errorf("entry[%d] SHA: got %q, want %q", i, data[i].Commit.SHA, sha)
+		}
+	}
+
+	// Verify replacement took effect.
+	if data[1].Benchmarks[0].Value != 999 {
+		t.Errorf("replaced entry value: got %f, want 999", data[1].Benchmarks[0].Value)
+	}
+}
+
+func TestAppendEntry_SortedInsertionOutOfOrder(t *testing.T) {
+	dir := t.TempDir()
+	s, err := New(dir)
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	// Append entries one at a time, out of order, to simulate late-arriving data.
+	e3 := model.BenchmarkEntry{
+		Commit:     model.Commit{SHA: "ccc", Date: "2024-03-01T00:00:00Z"},
+		Date:       1709251200000,
+		CPU:        "cpu1",
+		Benchmarks: []model.BenchmarkResult{{Name: "B", Value: 3, Unit: "ns/op"}},
+	}
+	e1 := model.BenchmarkEntry{
+		Commit:     model.Commit{SHA: "aaa", Date: "2024-01-01T00:00:00Z"},
+		Date:       1704067200000,
+		CPU:        "cpu1",
+		Benchmarks: []model.BenchmarkResult{{Name: "B", Value: 1, Unit: "ns/op"}},
+	}
+	e2 := model.BenchmarkEntry{
+		Commit:     model.Commit{SHA: "bbb", Date: "2024-02-01T00:00:00Z"},
+		Date:       1706745600000,
+		CPU:        "cpu1",
+		Benchmarks: []model.BenchmarkResult{{Name: "B", Value: 2, Unit: "ns/op"}},
+	}
+
+	for _, e := range []model.BenchmarkEntry{e3, e1, e2} {
+		if err := s.AppendEntry("main", e, 0); err != nil {
+			t.Fatalf("AppendEntry error: %v", err)
+		}
+	}
+
+	data, err := s.ReadBranchData("main")
+	if err != nil {
+		t.Fatalf("ReadBranchData() error: %v", err)
+	}
+
+	if len(data) != 3 {
+		t.Fatalf("expected 3 entries, got %d", len(data))
+	}
+
+	expectedSHAs := []string{"aaa", "bbb", "ccc"}
+	for i, sha := range expectedSHAs {
+		if data[i].Commit.SHA != sha {
+			t.Errorf("entry[%d] SHA: got %q, want %q", i, data[i].Commit.SHA, sha)
+		}
+	}
+}
+
+func TestAppendEntry_MaxItemsAfterReplace(t *testing.T) {
+	dir := t.TempDir()
+	s, err := New(dir)
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	// Seed with 3 entries.
+	for i, sha := range []string{"aaa", "bbb", "ccc"} {
+		e := model.BenchmarkEntry{
+			Commit:     model.Commit{SHA: sha, Date: "2024-01-0" + string(rune('1'+i)) + "T00:00:00Z"},
+			Date:       int64(1704067200000 + i*86400000),
+			CPU:        "cpu1",
+			Benchmarks: []model.BenchmarkResult{{Name: "B", Value: float64(i + 1), Unit: "ns/op"}},
+		}
+		if err := s.AppendEntry("main", e, 0); err != nil {
+			t.Fatalf("seed AppendEntry error: %v", err)
+		}
+	}
+
+	// Replace bbb (same key), with maxItems=2.
+	replacement := model.BenchmarkEntry{
+		Commit:     model.Commit{SHA: "bbb", Date: "2024-01-02T00:00:00Z"},
+		Date:       1704153600000,
+		CPU:        "cpu1",
+		Benchmarks: []model.BenchmarkResult{{Name: "B", Value: 999, Unit: "ns/op"}},
+	}
+	if err := s.AppendEntry("main", replacement, 2); err != nil {
+		t.Fatalf("replace AppendEntry error: %v", err)
+	}
+
+	data, err := s.ReadBranchData("main")
+	if err != nil {
+		t.Fatalf("ReadBranchData() error: %v", err)
+	}
+
+	// After replacement we have 3 entries, maxItems=2 trims to last 2.
+	if len(data) != 2 {
+		t.Fatalf("expected 2 entries (maxItems), got %d", len(data))
+	}
+
+	if data[0].Commit.SHA != "bbb" {
+		t.Errorf("entry[0] SHA: got %q, want %q", data[0].Commit.SHA, "bbb")
+	}
+	if data[1].Commit.SHA != "ccc" {
+		t.Errorf("entry[1] SHA: got %q, want %q", data[1].Commit.SHA, "ccc")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// EntryKey tests
+// ---------------------------------------------------------------------------
+
+func TestEntryKey(t *testing.T) {
+	e1 := model.BenchmarkEntry{
+		Commit: model.Commit{SHA: "abc123"},
+		CPU:    "Intel Xeon",
+		CGO:    true,
+	}
+	e2 := model.BenchmarkEntry{
+		Commit: model.Commit{SHA: "abc123"},
+		CPU:    "Intel Xeon",
+		CGO:    true,
+	}
+	e3 := model.BenchmarkEntry{
+		Commit: model.Commit{SHA: "abc123"},
+		CPU:    "AMD Ryzen",
+		CGO:    true,
+	}
+	e4 := model.BenchmarkEntry{
+		Commit: model.Commit{SHA: "abc123"},
+		CPU:    "Intel Xeon",
+		CGO:    false,
+	}
+	e5 := model.BenchmarkEntry{
+		Commit: model.Commit{SHA: "def456"},
+		CPU:    "Intel Xeon",
+		CGO:    true,
+	}
+
+	if e1.EntryKey() != e2.EntryKey() {
+		t.Error("same commit+cpu+cgo should produce same key")
+	}
+	if e1.EntryKey() == e3.EntryKey() {
+		t.Error("different CPU should produce different key")
+	}
+	if e1.EntryKey() == e4.EntryKey() {
+		t.Error("different CGO should produce different key")
+	}
+	if e1.EntryKey() == e5.EntryKey() {
+		t.Error("different commit should produce different key")
 	}
 }
