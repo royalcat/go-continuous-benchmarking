@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   benchmark:
-    name: Run benchmarks
+    name: Benchmark (${{ matrix.os }}, CGO=${{ matrix.cgo }})
     strategy:
       fail-fast: false
       matrix:
@@ -22,7 +22,6 @@ jobs:
       - uses: actions/checkout@v6
         with:
           ref: ${{ github.ref }}
-          fetch-depth: 0
 
       - uses: actions/setup-go@v6
         with:
@@ -31,10 +30,60 @@ jobs:
       - name: Run benchmarks
         run: go test -bench=. -count=1 -benchtime=200ms ./... 2>&1 | tee bench-output.txt
 
-      - name: Store benchmark results
-        uses: royalcat/go-continuous-benchmarking@master
+      - name: Parse benchmark results
+        # Local path because this workflow lives in the action repo itself.
+        # External consumers should use: royalcat/go-continuous-benchmarking@vX
+        # NOTE: using ./ in store mode will mess up local repo state because
+        # the action checks out the gh-pages branch. This is fine in CI since
+        # each job gets a fresh clone, but be aware when debugging locally.
+        uses: ./
         with:
+          mode: parse
           output-file-path: bench-output.txt
+          result-dir: benchmark-result
+
+      - name: Upload parsed results
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-${{ matrix.os }}-cgo${{ matrix.cgo }}
+          path: benchmark-result/
+          retention-days: 1
+
+  store:
+    name: Store benchmark results
+    needs: benchmark
+    runs-on: ubuntu-latest
+    concurrency:
+      group: ${{ github.workflow }}-store-${{ github.ref }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.24"
+
+      - name: Download all benchmark artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: benchmark-results
+          pattern: bench-*
+
+      - name: List downloaded artifacts
+        run: find benchmark-results -type f | sort
+
+      - name: Store benchmark results
+        # Local path because this workflow lives in the action repo itself.
+        # External consumers should use: royalcat/go-continuous-benchmarking@vX
+        # NOTE: using ./ in store mode will mess up local repo state because
+        # the action checks out the gh-pages branch. Make sure to clean up
+        # the reset repo state before continuing.
+        uses: ./
+        with:
+          mode: store
+          entries: "benchmark-results/*/entry.json"
           github-token: ${{ secrets.GITHUB_TOKEN }}
           auto-push: "true"
           max-items-in-chart: "100"

@@ -7,62 +7,35 @@ branding:
   color: "blue"
 
 inputs:
-  output-file-path:
-    description: "Path to the file containing go test -bench output"
+  mode:
+    description: |
+      Operating mode:
+        parse - Parse go test -bench output on the benchmark runner, auto-detect
+                host metadata (CPU, GOOS, GOARCH, CGO), and write a BenchmarkEntry
+                JSON + raw output log to result-dir.
+        store - Read pre-parsed BenchmarkEntry JSON files, merge them into the
+                branch data on gh-pages, and deploy the frontend dashboard.
     required: true
 
-  branch:
-    description: "Git branch name for organizing results. Defaults to the current branch."
+  # --- parse mode inputs ---
+
+  output-file-path:
+    description: "[parse] Path to the file containing go test -bench output. Reads stdin if empty."
     required: false
     default: ""
 
-  gh-pages-branch:
-    description: "Name of the GitHub Pages branch"
+  result-dir:
+    description: "[parse] Directory to write entry.json and output.log into. Upload this as an artifact."
     required: false
-    default: "gh-pages"
-
-  benchmark-data-dir-path:
-    description: "Path within the GitHub Pages branch to store benchmark data and dashboard"
-    required: false
-    default: "dev/bench"
-
-  github-token:
-    description: "GitHub API token for pushing to the gh-pages branch"
-    required: false
-    default: ""
-
-  auto-push:
-    description: "If true, automatically push benchmark results to the gh-pages branch"
-    required: false
-    default: "false"
-
-  max-items-in-chart:
-    description: "Maximum number of data points per branch (0 = unlimited)"
-    required: false
-    default: "0"
-
-  repo-url:
-    description: "Repository URL displayed in the dashboard header. Defaults to the current repository."
-    required: false
-    default: ""
-
-  go-version:
-    description: "Go version to use for building the benchmark tool. If empty, expects Go to be already installed."
-    required: false
-    default: ""
-
-  skip-fetch-gh-pages:
-    description: "If true, skip fetching the gh-pages branch (useful if already checked out)"
-    required: false
-    default: "false"
+    default: "benchmark-result"
 
   cpu-model:
-    description: "CPU model name to record alongside benchmark results. If empty, auto-detected from the runner machine."
+    description: "[parse] CPU model name to record. If empty, auto-detected from the runner machine or go test output."
     required: false
     default: ""
 
   cgo-enabled:
-    description: "CGO enabled status: 'true', 'false', or '' (auto-detect from CGO_ENABLED env var)"
+    description: "[parse] CGO enabled status: 'true', 'false', or '' (auto-detect from CGO_ENABLED env var)."
     required: false
     default: ""
 
@@ -71,35 +44,83 @@ inputs:
     required: false
     default: ""
 
+  # --- store mode inputs ---
+
+  entries:
+    description: "[store] Glob or comma-separated paths to entry.json files produced by parse mode (required for store mode)."
+    required: false
+    default: ""
+
+  branch:
+    description: "[store] Git branch name for organizing results. Defaults to the current branch."
+    required: false
+    default: ""
+
+  gh-pages-branch:
+    description: "[store] Name of the GitHub Pages branch."
+    required: false
+    default: "gh-pages"
+
+  benchmark-data-dir-path:
+    description: "[store] Path within the GitHub Pages branch to store benchmark data and dashboard."
+    required: false
+    default: "dev/bench"
+
+  github-token:
+    description: "[store] GitHub API token for pushing to the gh-pages branch."
+    required: false
+    default: ""
+
+  auto-push:
+    description: "[store] If true, automatically push benchmark results to the gh-pages branch."
+    required: false
+    default: "false"
+
+  max-items-in-chart:
+    description: "[store] Maximum number of data points per branch (0 = unlimited)."
+    required: false
+    default: "0"
+
+  repo-url:
+    description: "Repository URL displayed in the dashboard header. Defaults to the current repository."
+    required: false
+    default: ""
+
+  skip-fetch-gh-pages:
+    description: "[store] If true, skip fetching the gh-pages branch (useful if already checked out)."
+    required: false
+    default: "false"
+
   fail-on-alert:
-    description: "If true, fail the workflow when a benchmark result exceeds the alert threshold"
+    description: "[store] If true, fail the workflow when a benchmark result exceeds the alert threshold."
     required: false
     default: "false"
 
   alert-threshold:
-    description: "Percentage threshold for performance regression alerts (e.g. '200%')"
+    description: "[store] Percentage threshold for performance regression alerts (e.g. '200%')."
     required: false
     default: "200%"
 
 outputs:
+  result-dir:
+    description: "[parse] Path to the directory containing entry.json and output.log"
+    value: ${{ steps.parse-tool.outputs.result-dir }}
+
   benchmark-results-json:
-    description: "Path to the JSON file with the parsed benchmark results for this run"
-    value: ${{ steps.run-tool.outputs.results-json }}
+    description: "[store] Path to the branch JSON file with all benchmark entries"
+    value: ${{ steps.store-tool.outputs.results-json }}
 
 runs:
   using: "composite"
   steps:
-    - name: Resolve inputs
+    # ==================================================================
+    # Shared steps
+    # ==================================================================
+
+    - name: Resolve common inputs
       id: resolve
       shell: bash
       run: |
-        # Resolve branch name
-        BRANCH="${{ inputs.branch }}"
-        if [ -z "$BRANCH" ]; then
-          BRANCH="${GITHUB_REF_NAME}"
-        fi
-        echo "branch=${BRANCH}" >> "$GITHUB_OUTPUT"
-
         # Resolve repo URL
         REPO_URL="${{ inputs.repo-url }}"
         if [ -z "$REPO_URL" ]; then
@@ -107,7 +128,14 @@ runs:
         fi
         echo "repo-url=${REPO_URL}" >> "$GITHUB_OUTPUT"
 
-        # Resolve commit info
+        # Resolve branch name (used by store mode)
+        BRANCH="${{ inputs.branch }}"
+        if [ -z "$BRANCH" ]; then
+          BRANCH="${GITHUB_REF_NAME}"
+        fi
+        echo "branch=${BRANCH}" >> "$GITHUB_OUTPUT"
+
+        # Commit SHA
         echo "commit-sha=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
 
     - name: Get commit details
@@ -119,7 +147,6 @@ runs:
         COMMIT_DATE=$(git log -1 --format='%aI' "$GITHUB_SHA" 2>/dev/null || date -u +"%Y-%m-%dT%H:%M:%SZ")
         COMMIT_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}"
 
-        # Use heredoc for multi-line safety
         {
           echo "commit-msg<<GOBENCH_EOF"
           echo "$COMMIT_MSG"
@@ -140,68 +167,42 @@ runs:
         go build -o "$TOOL_BIN" .
         echo "tool-bin=${TOOL_BIN}" >> "$GITHUB_OUTPUT"
 
-    - name: Fetch gh-pages branch
-      if: inputs.skip-fetch-gh-pages != 'true'
+    # ==================================================================
+    # Parse mode
+    # ==================================================================
+
+    - name: "[parse] Make output file path absolute"
+      id: parse-resolve
+      if: inputs.mode == 'parse'
       shell: bash
       run: |
-        GH_PAGES_BRANCH="${{ inputs.gh-pages-branch }}"
+        OUTPUT_FILE="${{ inputs.output-file-path }}"
+        if [ -n "$OUTPUT_FILE" ]; then
+          ABS="$(cd "$(dirname "$OUTPUT_FILE")" && pwd)/$(basename "$OUTPUT_FILE")"
+          echo "output-file=${ABS}" >> "$GITHUB_OUTPUT"
+        else
+          echo "output-file=" >> "$GITHUB_OUTPUT"
+        fi
 
-        # Save current state
-        CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "detached")
-        CURRENT_SHA=$(git rev-parse HEAD)
-
-        echo "current-branch=${CURRENT_BRANCH}" >> "$GITHUB_ENV"
-        echo "current-sha=${CURRENT_SHA}" >> "$GITHUB_ENV"
-
-        # Try to fetch the gh-pages branch. It may not exist yet.
-        git fetch origin "${GH_PAGES_BRANCH}:${GH_PAGES_BRANCH}" 2>/dev/null || true
-
-    - name: Checkout gh-pages and run tool
-      id: run-tool
+    - name: "[parse] Run parse"
+      id: parse-tool
+      if: inputs.mode == 'parse'
       shell: bash
       run: |
         set -euo pipefail
 
-        GH_PAGES_BRANCH="${{ inputs.gh-pages-branch }}"
-        DATA_DIR="${{ inputs.benchmark-data-dir-path }}"
         TOOL_BIN="${{ steps.build-tool.outputs.tool-bin }}"
-        OUTPUT_FILE="${{ inputs.output-file-path }}"
-        BRANCH="${{ steps.resolve.outputs.branch }}"
-        MAX_ITEMS="${{ inputs.max-items-in-chart }}"
-        REPO_URL="${{ steps.resolve.outputs.repo-url }}"
+        RESULT_DIR="${{ inputs.result-dir }}"
+        OUTPUT_FILE="${{ steps.parse-resolve.outputs.output-file }}"
 
-        # Make output file path absolute before switching branches
-        OUTPUT_FILE_ABS="$(cd "$(dirname "$OUTPUT_FILE")" && pwd)/$(basename "$OUTPUT_FILE")"
-
-        # Configure git identity early (needed if we create an orphan branch)
-        git config user.name "github-actions[bot]"
-        git config user.email "github-actions[bot]@users.noreply.github.com"
-
-        # Remember working tree
-        ORIG_SHA=$(git rev-parse HEAD)
-
-        # Check if gh-pages branch exists
-        if git rev-parse --verify "${GH_PAGES_BRANCH}" >/dev/null 2>&1; then
-          git checkout "${GH_PAGES_BRANCH}"
-        else
-          # Create orphan gh-pages branch
-          git checkout --orphan "${GH_PAGES_BRANCH}"
-          git rm -rf . 2>/dev/null || true
-          git commit --allow-empty -m "Initialize GitHub Pages branch for benchmarks"
+        OUTPUT_FLAG=""
+        if [ -n "$OUTPUT_FILE" ]; then
+          OUTPUT_FLAG="-output-file=${OUTPUT_FILE}"
         fi
 
-        # Ensure data directory exists
-        mkdir -p "${DATA_DIR}"
-
-        # Run the benchmark tool
-        MAX_ITEMS_FLAG=""
-        if [ "$MAX_ITEMS" != "0" ] && [ -n "$MAX_ITEMS" ]; then
-          MAX_ITEMS_FLAG="-max-items=${MAX_ITEMS}"
-        fi
-
-        CPU_MODEL_FLAG=""
+        CPU_FLAG=""
         if [ -n "${{ inputs.cpu-model }}" ]; then
-          CPU_MODEL_FLAG="-cpu-model=${{ inputs.cpu-model }}"
+          CPU_FLAG="-cpu-model=${{ inputs.cpu-model }}"
         fi
 
         CGO_FLAG=""
@@ -214,25 +215,137 @@ runs:
           GO_MODULE_FLAG="-go-module=${{ inputs.go-module }}"
         fi
 
-        "$TOOL_BIN" \
-          -output-file="${OUTPUT_FILE_ABS}" \
-          -branch="${BRANCH}" \
-          -data-dir="${DATA_DIR}" \
+        "$TOOL_BIN" parse \
+          ${OUTPUT_FLAG} \
+          -result-dir="${RESULT_DIR}" \
           -commit-sha="${{ steps.resolve.outputs.commit-sha }}" \
           -commit-msg="${{ steps.commit-info.outputs.commit-msg }}" \
           -commit-author="${{ steps.commit-info.outputs.commit-author }}" \
           -commit-date="${{ steps.commit-info.outputs.commit-date }}" \
           -commit-url="${{ steps.commit-info.outputs.commit-url }}" \
+          -repo-url="${{ steps.resolve.outputs.repo-url }}" \
+          ${CPU_FLAG} \
+          ${CGO_FLAG} \
+          ${GO_MODULE_FLAG}
+
+        echo "result-dir=${RESULT_DIR}" >> "$GITHUB_OUTPUT"
+
+    # ==================================================================
+    # Store mode
+    # ==================================================================
+
+    - name: "[store] Resolve entry file paths"
+      id: store-resolve
+      if: inputs.mode == 'store'
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        RAW_ENTRIES="${{ inputs.entries }}"
+
+        if [ -z "$RAW_ENTRIES" ]; then
+          echo "::error::entries input is required for store mode"
+          exit 1
+        fi
+
+        # Expand globs and convert to absolute comma-separated paths.
+        ABS_PATHS=""
+
+        IFS=',' read -ra COMMA_PARTS <<< "$RAW_ENTRIES"
+        for COMMA_PART in "${COMMA_PARTS[@]}"; do
+          while IFS= read -r LINE; do
+            LINE="$(echo "$LINE" | xargs)"
+            [ -z "$LINE" ] && continue
+
+            EXPANDED=()
+            shopt -s nullglob
+            EXPANDED=( $LINE )
+            shopt -u nullglob
+
+            if [ ${#EXPANDED[@]} -eq 0 ]; then
+              EXPANDED=("$LINE")
+            fi
+
+            for FILE in "${EXPANDED[@]}"; do
+              ABS="$(cd "$(dirname "$FILE")" 2>/dev/null && pwd)/$(basename "$FILE")"
+              if [ -n "$ABS_PATHS" ]; then
+                ABS_PATHS="${ABS_PATHS},${ABS}"
+              else
+                ABS_PATHS="${ABS}"
+              fi
+            done
+          done <<< "$COMMA_PART"
+        done
+
+        echo "abs-entries=${ABS_PATHS}" >> "$GITHUB_OUTPUT"
+        echo "Resolved entry files: ${ABS_PATHS}"
+
+    - name: "[store] Fetch gh-pages branch"
+      if: inputs.mode == 'store' && inputs.skip-fetch-gh-pages != 'true'
+      shell: bash
+      run: |
+        GH_PAGES_BRANCH="${{ inputs.gh-pages-branch }}"
+
+        CURRENT_SHA=$(git rev-parse HEAD)
+        echo "current-sha=${CURRENT_SHA}" >> "$GITHUB_ENV"
+
+        git fetch origin "${GH_PAGES_BRANCH}:${GH_PAGES_BRANCH}" 2>/dev/null || true
+
+    - name: "[store] Checkout gh-pages and run store"
+      id: store-tool
+      if: inputs.mode == 'store'
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        GH_PAGES_BRANCH="${{ inputs.gh-pages-branch }}"
+        DATA_DIR="${{ inputs.benchmark-data-dir-path }}"
+        TOOL_BIN="${{ steps.build-tool.outputs.tool-bin }}"
+        ENTRIES="${{ steps.store-resolve.outputs.abs-entries }}"
+        BRANCH="${{ steps.resolve.outputs.branch }}"
+        MAX_ITEMS="${{ inputs.max-items-in-chart }}"
+        REPO_URL="${{ steps.resolve.outputs.repo-url }}"
+
+        # Configure git identity
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+
+        ORIG_SHA=$(git rev-parse HEAD)
+
+        # Checkout or create gh-pages branch
+        if git rev-parse --verify "${GH_PAGES_BRANCH}" >/dev/null 2>&1; then
+          git checkout "${GH_PAGES_BRANCH}"
+        else
+          git checkout --orphan "${GH_PAGES_BRANCH}"
+          git rm -rf . 2>/dev/null || true
+          git commit --allow-empty -m "Initialize GitHub Pages branch for benchmarks"
+        fi
+
+        mkdir -p "${DATA_DIR}"
+
+        # Build flags
+        MAX_ITEMS_FLAG=""
+        if [ "$MAX_ITEMS" != "0" ] && [ -n "$MAX_ITEMS" ]; then
+          MAX_ITEMS_FLAG="-max-items=${MAX_ITEMS}"
+        fi
+
+        GO_MODULE_FLAG=""
+        if [ -n "${{ inputs.go-module }}" ]; then
+          GO_MODULE_FLAG="-go-module=${{ inputs.go-module }}"
+        fi
+
+        "$TOOL_BIN" store \
+          -entries="${ENTRIES}" \
+          -branch="${BRANCH}" \
+          -data-dir="${DATA_DIR}" \
           -repo-url="${REPO_URL}" \
           ${MAX_ITEMS_FLAG} \
-          ${CPU_MODEL_FLAG} \
-          ${CGO_FLAG} \
           ${GO_MODULE_FLAG}
 
         echo "results-json=${DATA_DIR}/data/$(echo "${BRANCH}" | sed 's/[\/\\:*?"<>|]/_/g').json" >> "$GITHUB_OUTPUT"
 
-    - name: Commit and push to gh-pages
-      if: inputs.auto-push == 'true'
+    - name: "[store] Commit and push to gh-pages"
+      if: inputs.mode == 'store' && inputs.auto-push == 'true'
       shell: bash
       run: |
         set -euo pipefail
@@ -253,8 +366,8 @@ runs:
           git push origin "${GH_PAGES_BRANCH}"
         fi
 
-    - name: Switch back to original branch
-      if: always()
+    - name: "[store] Switch back to original ref"
+      if: inputs.mode == 'store' && always()
       shell: bash
       run: |
         ORIG_SHA="${current_sha:-}"

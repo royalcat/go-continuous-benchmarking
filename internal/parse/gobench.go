@@ -21,13 +21,32 @@ var reGoBench = regexp.MustCompile(
 // rePkgLine matches the "pkg: ..." line that precedes benchmark output for a package.
 var rePkgLine = regexp.MustCompile(`^pkg:\s+(\S+)`)
 
+// reCPULine matches the "cpu: ..." line emitted by go test.
+var reCPULine = regexp.MustCompile(`^cpu:\s+(.+)$`)
+
+// OutputMetadata contains metadata extracted from go test benchmark output headers.
+type OutputMetadata struct {
+	// CPU is the CPU model string extracted from the "cpu: ..." line.
+	// Empty if the line was not present in the output.
+	CPU string
+}
+
 // ParseGoBenchOutput parses the output of `go test -bench` and returns a slice
 // of BenchmarkResult. It handles multiple packages, multiple metrics per benchmark,
 // and the standard Go benchmark output format.
 func ParseGoBenchOutput(r io.Reader) ([]model.BenchmarkResult, error) {
+	results, _, err := ParseGoBenchOutputWithMeta(r)
+	return results, err
+}
+
+// ParseGoBenchOutputWithMeta parses the output of `go test -bench` and returns
+// both the benchmark results and any metadata extracted from the output headers
+// (such as the CPU model from the "cpu: ..." line).
+func ParseGoBenchOutputWithMeta(r io.Reader) ([]model.BenchmarkResult, OutputMetadata, error) {
 	scanner := bufio.NewScanner(r)
 
 	var results []model.BenchmarkResult
+	var meta OutputMetadata
 	var currentPkg string
 
 	// First pass: collect all lines.
@@ -37,13 +56,24 @@ func ParseGoBenchOutput(r io.Reader) ([]model.BenchmarkResult, error) {
 		lines = append(lines, line)
 	}
 	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("reading benchmark output: %w", err)
+		return nil, meta, fmt.Errorf("reading benchmark output: %w", err)
 	}
 
 	for _, line := range lines {
+		// Strip Windows-style carriage returns.
+		line = strings.TrimRight(line, "\r")
+
 		// Track current package.
 		if m := rePkgLine.FindStringSubmatch(line); m != nil {
 			currentPkg = m[1]
+			continue
+		}
+
+		// Extract CPU metadata from the "cpu: ..." header line.
+		if m := reCPULine.FindStringSubmatch(line); m != nil {
+			if meta.CPU == "" {
+				meta.CPU = strings.TrimSpace(m[1])
+			}
 			continue
 		}
 
@@ -103,8 +133,8 @@ func ParseGoBenchOutput(r io.Reader) ([]model.BenchmarkResult, error) {
 	}
 
 	if len(results) == 0 {
-		return nil, fmt.Errorf("no benchmark results found in output")
+		return nil, meta, fmt.Errorf("no benchmark results found in output")
 	}
 
-	return results, nil
+	return results, meta, nil
 }

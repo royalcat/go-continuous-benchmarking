@@ -160,6 +160,20 @@ func (s *Storage) WriteBranchData(branch string, entries model.BranchData) error
 // If maxItems > 0, the oldest entries are trimmed so that at most maxItems
 // entries remain per branch.
 func (s *Storage) AppendEntry(branch string, entry model.BenchmarkEntry, maxItems int) error {
+	return s.AppendEntries(branch, []model.BenchmarkEntry{entry}, maxItems)
+}
+
+// AppendEntries adds multiple benchmark entries for the given branch in a single
+// read-modify-write cycle. This is more efficient than calling AppendEntry in a
+// loop when processing multiple output files (e.g. from a matrix build).
+//
+// If maxItems > 0, the oldest entries are trimmed so that at most maxItems
+// entries remain per branch after all new entries have been appended.
+func (s *Storage) AppendEntries(branch string, newEntries []model.BenchmarkEntry, maxItems int) error {
+	if len(newEntries) == 0 {
+		return nil
+	}
+
 	// Register the branch in the branch list.
 	if _, err := s.EnsureBranch(branch); err != nil {
 		return fmt.Errorf("ensuring branch %q: %w", branch, err)
@@ -171,8 +185,8 @@ func (s *Storage) AppendEntry(branch string, entry model.BenchmarkEntry, maxItem
 		return err
 	}
 
-	// Append the new entry.
-	entries = append(entries, entry)
+	// Append all new entries.
+	entries = append(entries, newEntries...)
 
 	// Trim old entries if maxItems is set.
 	if maxItems > 0 && len(entries) > maxItems {
