@@ -611,14 +611,16 @@
     var values = extractCGOValues(entries);
     var hasBoth = values.has(true) && values.has(false);
 
+    // Always show the checkbox
+    cgoGroup.style.display = "flex";
+    cgoCheckbox.checked = values.has(true);
+
     if (hasBoth) {
-      // Data contains both CGO enabled and disabled entries: show the toggle
-      cgoGroup.style.display = "flex";
+      // Data has both CGO states: allow the user to toggle
+      cgoCheckbox.disabled = false;
     } else {
-      // Only one CGO state in the data: hide the toggle, no filtering needed
-      cgoGroup.style.display = "none";
-      // Set checkbox to reflect what the data has
-      cgoCheckbox.checked = values.has(true);
+      // Only one CGO state: show current state but disable toggling
+      cgoCheckbox.disabled = true;
     }
   }
 
