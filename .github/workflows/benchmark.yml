@@ -31,7 +31,12 @@ jobs:
         run: go test -bench=. -count=1 -benchtime=200ms ./... 2>&1 | tee bench-output.txt
 
       - name: Parse benchmark results
-        uses: royalcat/go-continuous-benchmarking@${{ github.sha }}
+        # Local path because this workflow lives in the action repo itself.
+        # External consumers should use: royalcat/go-continuous-benchmarking@vX
+        # NOTE: using ./ in store mode will mess up local repo state because
+        # the action checks out the gh-pages branch. This is fine in CI since
+        # each job gets a fresh clone, but be aware when debugging locally.
+        uses: ./
         with:
           mode: parse
           output-file-path: bench-output.txt
@@ -70,7 +75,12 @@ jobs:
         run: find benchmark-results -type f | sort
 
       - name: Store benchmark results
-        uses: royalcat/go-continuous-benchmarking@${{ github.sha }}
+        # Local path because this workflow lives in the action repo itself.
+        # External consumers should use: royalcat/go-continuous-benchmarking@vX
+        # NOTE: using ./ in store mode will mess up local repo state because
+        # the action checks out the gh-pages branch. Make sure to clean up
+        # the reset repo state before continuing.
+        uses: ./
         with:
           mode: store
           entries: "benchmark-results/*/entry.json"
