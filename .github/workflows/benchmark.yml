@@ -31,7 +31,7 @@ jobs:
         run: go test -bench=. -count=1 -benchtime=200ms ./... 2>&1 | tee bench-output.txt
 
       - name: Parse benchmark results
-        uses: royalcat/go-continuous-benchmarking@master
+        uses: royalcat/go-continuous-benchmarking@${{ github.sha }}
         with:
           mode: parse
           output-file-path: bench-output.txt
@@ -70,7 +70,7 @@ jobs:
         run: find benchmark-results -type f | sort
 
       - name: Store benchmark results
-        uses: royalcat/go-continuous-benchmarking@master
+        uses: royalcat/go-continuous-benchmarking@${{ github.sha }}
         with:
           mode: store
           entries: "benchmark-results/*/entry.json"
