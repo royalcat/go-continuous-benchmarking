@@ -421,6 +421,33 @@
       filterCPUModel,
       filterCGO,
     );
+
+    // Remove benchmarks that don't have data for the latest commit.
+    // This hides graphs for benchmarks that have been removed from the codebase.
+    if (benchMap.size > 0) {
+      var latestCommitSHA = null;
+      var latestDate = -Infinity;
+      for (const dataPoints of benchMap.values()) {
+        if (dataPoints.length > 0) {
+          var last = dataPoints[dataPoints.length - 1];
+          if (last.date > latestDate) {
+            latestDate = last.date;
+            latestCommitSHA = last.commit.sha;
+          }
+        }
+      }
+      if (latestCommitSHA) {
+        for (const [key, dataPoints] of benchMap) {
+          var hasLatest = dataPoints.some(function (d) {
+            return d.commit.sha === latestCommitSHA;
+          });
+          if (!hasLatest) {
+            benchMap.delete(key);
+          }
+        }
+      }
+    }
+
     var filterText = (filterInput.value || "").toLowerCase().trim();
 
     // Apply text filter
