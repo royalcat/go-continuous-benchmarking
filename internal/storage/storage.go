@@ -7,11 +7,31 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"time"
 
 	"github.com/royalcat/go-continuous-benchmarking/internal/model"
 )
+
+// releaseTagsFileName is the name of the JSON file that maps commit SHAs to
+// their semver tag names. It lives alongside the branch data files in data/.
+const releaseTagsFileName = "release_tags.json"
+
+// ReleasesVirtualBranch is the name of the synthetic branch that aggregates
+// benchmark data from all semver-tagged runs (e.g. v1.0.0, v2.3.4-rc.1).
+// It always appears at the top of the branch selector in the frontend.
+const ReleasesVirtualBranch = "releases"
+
+// semverRe matches tag names that follow semantic versioning:
+// optional "v" prefix, then MAJOR.MINOR.PATCH, with optional pre-release suffix.
+var semverRe = regexp.MustCompile(`^v?\d+\.\d+\.\d+`)
+
+// IsSemanticVersionTag reports whether name looks like a semver tag
+// (e.g. "v1.0.0", "1.2.3", "v0.1.0-beta.1").
+func IsSemanticVersionTag(name string) bool {
+	return semverRe.MatchString(name)
+}
 
 // sortByCommitDate sorts entries by their Commit.Date field (RFC 3339 string).
 // Entries with unparseable dates are placed at the beginning.
@@ -59,6 +79,11 @@ func (s *Storage) branchesPath() string {
 func (s *Storage) branchDataPath(branch string) string {
 	safe := sanitizeBranchName(branch)
 	return filepath.Join(s.baseDir, "data", safe+".json")
+}
+
+// releaseTagsPath returns the path to data/release_tags.json.
+func (s *Storage) releaseTagsPath() string {
+	return filepath.Join(s.baseDir, "data", releaseTagsFileName)
 }
 
 // sanitizeBranchName replaces characters that are problematic in file names.
@@ -113,25 +138,49 @@ func (s *Storage) WriteBranches(branches []string) error {
 
 // EnsureBranch adds branch to the branch list if it is not already present.
 // It returns true if the branch was newly added.
+//
+// Semver tags (e.g. "v1.0.0") are never added individually. Instead the
+// virtual "releases" branch is registered so that all tag data is aggregated
+// under a single entry in the selector.
 func (s *Storage) EnsureBranch(branch string) (bool, error) {
+	// For semver tags, register the virtual "releases" branch instead.
+	nameToRegister := branch
+	if IsSemanticVersionTag(branch) {
+		nameToRegister = ReleasesVirtualBranch
+	}
+
 	branches, err := s.ReadBranches()
 	if err != nil {
 		return false, err
 	}
 
 	for _, b := range branches {
-		if b == branch {
+		if b == nameToRegister {
 			return false, nil
 		}
 	}
 
-	branches = append(branches, branch)
-	sort.Strings(branches)
+	branches = append(branches, nameToRegister)
+	sortBranches(branches)
 
 	if err := s.WriteBranches(branches); err != nil {
 		return false, err
 	}
 	return true, nil
+}
+
+// sortBranches sorts the branch list alphabetically but always keeps
+// the "releases" virtual branch at the very top of the list.
+func sortBranches(branches []string) {
+	sort.SliceStable(branches, func(i, j int) bool {
+		if branches[i] == ReleasesVirtualBranch {
+			return true
+		}
+		if branches[j] == ReleasesVirtualBranch {
+			return false
+		}
+		return branches[i] < branches[j]
+	})
 }
 
 // --------------------------------------------------------------------------
@@ -187,16 +236,43 @@ func (s *Storage) AppendEntry(branch string, entry model.BenchmarkEntry, maxItem
 //
 // If maxItems > 0, the oldest entries are trimmed so that at most maxItems
 // entries remain per branch after all new entries have been appended.
+//
+// When branch is a semver tag, the entries are also merged into the combined
+// "releases" data file so that all tagged releases can be compared side by
+// side. The individual tag data file is still written for reference.
 func (s *Storage) AppendEntries(branch string, newEntries []model.BenchmarkEntry, maxItems int) error {
 	if len(newEntries) == 0 {
 		return nil
 	}
 
-	// Register the branch in the branch list.
+	// Register the branch (or "releases" for semver tags) in the branch list.
 	if _, err := s.EnsureBranch(branch); err != nil {
 		return fmt.Errorf("ensuring branch %q: %w", branch, err)
 	}
 
+	// Write to the individual branch/tag data file.
+	if err := s.mergeEntries(branch, newEntries, maxItems); err != nil {
+		return err
+	}
+
+	// For semver tags, also merge entries into the combined "releases" file
+	// and record the tag→SHA mapping so the frontend can show version labels.
+	if IsSemanticVersionTag(branch) {
+		if err := s.mergeEntries(ReleasesVirtualBranch, newEntries, maxItems); err != nil {
+			return fmt.Errorf("updating releases data: %w", err)
+		}
+		if err := s.recordReleaseTags(branch, newEntries); err != nil {
+			return fmt.Errorf("updating release tags map: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// mergeEntries performs the actual read-modify-write merge of newEntries into
+// the data file for the given branch name. It handles deduplication, sorting,
+// and trimming.
+func (s *Storage) mergeEntries(branch string, newEntries []model.BenchmarkEntry, maxItems int) error {
 	// Read existing data.
 	entries, err := s.ReadBranchData(branch)
 	if err != nil {
@@ -229,6 +305,58 @@ func (s *Storage) AppendEntries(branch string, newEntries []model.BenchmarkEntry
 	}
 
 	return s.WriteBranchData(branch, filtered)
+}
+
+// --------------------------------------------------------------------------
+// Release tags map
+// --------------------------------------------------------------------------
+
+// readReleaseTags reads the release_tags.json map (commit SHA → tag name).
+// Returns an empty map if the file does not exist.
+func (s *Storage) readReleaseTags() (map[string]string, error) {
+	data, err := os.ReadFile(s.releaseTagsPath())
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return make(map[string]string), nil
+		}
+		return nil, fmt.Errorf("reading release tags: %w", err)
+	}
+	var tags map[string]string
+	if err := json.Unmarshal(data, &tags); err != nil {
+		return nil, fmt.Errorf("decoding release tags: %w", err)
+	}
+	if tags == nil {
+		tags = make(map[string]string)
+	}
+	return tags, nil
+}
+
+// writeReleaseTags writes the release tags map to disk.
+func (s *Storage) writeReleaseTags(tags map[string]string) error {
+	data, err := json.MarshalIndent(tags, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encoding release tags: %w", err)
+	}
+	if err := os.WriteFile(s.releaseTagsPath(), data, 0o644); err != nil {
+		return fmt.Errorf("writing release tags: %w", err)
+	}
+	return nil
+}
+
+// recordReleaseTags updates release_tags.json with mappings from each entry's
+// commit SHA to the given tag name. If a SHA already has a mapping, it is
+// overwritten (the latest tag wins, which handles re-tags).
+func (s *Storage) recordReleaseTags(tag string, entries []model.BenchmarkEntry) error {
+	tags, err := s.readReleaseTags()
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		if e.Commit.SHA != "" {
+			tags[e.Commit.SHA] = tag
+		}
+	}
+	return s.writeReleaseTags(tags)
 }
 
 // --------------------------------------------------------------------------

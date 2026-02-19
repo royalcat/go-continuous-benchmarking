@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"github.com/royalcat/go-continuous-benchmarking/internal/model"
@@ -153,6 +154,58 @@ func TestEnsureBranch_SortedOrder(t *testing.T) {
 		if branches[i] != expected[i] {
 			t.Errorf("branch[%d]: got %q, want %q", i, branches[i], expected[i])
 		}
+	}
+}
+
+func TestEnsureBranch_ReleasesAlwaysFirst(t *testing.T) {
+	dir := t.TempDir()
+	s, err := New(dir)
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	// Add regular branches first, then a semver tag.
+	for _, b := range []string{"main", "develop"} {
+		if _, err := s.EnsureBranch(b); err != nil {
+			t.Fatalf("EnsureBranch(%q) error: %v", b, err)
+		}
+	}
+
+	// A semver tag should register "releases" instead.
+	added, err := s.EnsureBranch("v1.0.0")
+	if err != nil {
+		t.Fatalf("EnsureBranch(v1.0.0) error: %v", err)
+	}
+	if !added {
+		t.Error("expected 'releases' to be newly added")
+	}
+
+	branches, err := s.ReadBranches()
+	if err != nil {
+		t.Fatalf("ReadBranches() error: %v", err)
+	}
+
+	// "releases" must be first; individual tag "v1.0.0" must not appear.
+	expected := []string{"releases", "develop", "main"}
+	if !reflect.DeepEqual(branches, expected) {
+		t.Errorf("branches = %v, want %v", branches, expected)
+	}
+
+	// Adding another semver tag should not duplicate "releases".
+	added2, err := s.EnsureBranch("v2.0.0")
+	if err != nil {
+		t.Fatalf("EnsureBranch(v2.0.0) error: %v", err)
+	}
+	if added2 {
+		t.Error("expected 'releases' to NOT be newly added on second semver tag")
+	}
+
+	branches2, err := s.ReadBranches()
+	if err != nil {
+		t.Fatalf("ReadBranches() error: %v", err)
+	}
+	if !reflect.DeepEqual(branches2, expected) {
+		t.Errorf("branches after second tag = %v, want %v", branches2, expected)
 	}
 }
 
@@ -1252,5 +1305,411 @@ func TestEntryKey(t *testing.T) {
 	}
 	if e1.EntryKey() == e8.EntryKey() {
 		t.Error("different GoVersion should produce different key")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Semver detection tests
+// ---------------------------------------------------------------------------
+
+func TestIsSemanticVersionTag(t *testing.T) {
+	tests := []struct {
+		name string
+		want bool
+	}{
+		{"v1.0.0", true},
+		{"v0.1.0", true},
+		{"v12.34.56", true},
+		{"v1.2.3-beta.1", true},
+		{"v1.2.3-rc.1", true},
+		{"1.0.0", true},
+		{"0.1.0", true},
+		{"1.2.3-alpha", true},
+		{"main", false},
+		{"develop", false},
+		{"feature/foo", false},
+		{"release/1.0", false},
+		{"v1", false},
+		{"v1.0", false},
+		{"releases", false},
+		{"", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := IsSemanticVersionTag(tt.name)
+			if got != tt.want {
+				t.Errorf("IsSemanticVersionTag(%q) = %v, want %v", tt.name, got, tt.want)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Releases virtual branch tests
+// ---------------------------------------------------------------------------
+
+func TestAppendEntries_SemverTag_CreatesReleasesData(t *testing.T) {
+	dir := t.TempDir()
+	s, err := New(dir)
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	entry := model.BenchmarkEntry{
+		Commit: model.Commit{SHA: "aaa111", Date: "2024-01-01T00:00:00Z"},
+		Date:   1704067200000,
+		Params: model.RunParams{CPU: "TestCPU", GOOS: "linux", GOARCH: "amd64", GoVersion: "go1.22.0", CGO: true},
+		Benchmarks: []model.BenchmarkResult{
+			{Name: "BenchmarkFoo", Value: 100, Unit: "ns/op"},
+		},
+	}
+
+	// Append as a semver tag.
+	if err := s.AppendEntries("v1.0.0", []model.BenchmarkEntry{entry}, 0); err != nil {
+		t.Fatalf("AppendEntries(v1.0.0) error: %v", err)
+	}
+
+	// The individual tag data file should exist.
+	tagData, err := s.ReadBranchData("v1.0.0")
+	if err != nil {
+		t.Fatalf("ReadBranchData(v1.0.0) error: %v", err)
+	}
+	if len(tagData) != 1 {
+		t.Fatalf("tag data: got %d entries, want 1", len(tagData))
+	}
+
+	// The combined "releases" data file should also exist with the same entry.
+	relData, err := s.ReadBranchData(ReleasesVirtualBranch)
+	if err != nil {
+		t.Fatalf("ReadBranchData(releases) error: %v", err)
+	}
+	if len(relData) != 1 {
+		t.Fatalf("releases data: got %d entries, want 1", len(relData))
+	}
+	if relData[0].Commit.SHA != "aaa111" {
+		t.Errorf("releases entry SHA = %q, want %q", relData[0].Commit.SHA, "aaa111")
+	}
+
+	// branches.json should contain "releases" (not "v1.0.0") and it should be first.
+	branches, err := s.ReadBranches()
+	if err != nil {
+		t.Fatalf("ReadBranches() error: %v", err)
+	}
+	if len(branches) != 1 || branches[0] != ReleasesVirtualBranch {
+		t.Errorf("branches = %v, want [%q]", branches, ReleasesVirtualBranch)
+	}
+}
+
+func TestAppendEntries_MultipleSemverTags_AggregateInReleases(t *testing.T) {
+	dir := t.TempDir()
+	s, err := New(dir)
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	entryV1 := model.BenchmarkEntry{
+		Commit: model.Commit{SHA: "aaa111", Date: "2024-01-01T00:00:00Z"},
+		Date:   1704067200000,
+		Params: model.RunParams{CPU: "TestCPU", GOOS: "linux", GOARCH: "amd64", GoVersion: "go1.22.0", CGO: true},
+		Benchmarks: []model.BenchmarkResult{
+			{Name: "BenchmarkFoo", Value: 100, Unit: "ns/op"},
+		},
+	}
+
+	entryV2 := model.BenchmarkEntry{
+		Commit: model.Commit{SHA: "bbb222", Date: "2024-06-01T00:00:00Z"},
+		Date:   1717200000000,
+		Params: model.RunParams{CPU: "TestCPU", GOOS: "linux", GOARCH: "amd64", GoVersion: "go1.22.0", CGO: true},
+		Benchmarks: []model.BenchmarkResult{
+			{Name: "BenchmarkFoo", Value: 80, Unit: "ns/op"},
+		},
+	}
+
+	if err := s.AppendEntries("v1.0.0", []model.BenchmarkEntry{entryV1}, 0); err != nil {
+		t.Fatalf("AppendEntries(v1.0.0) error: %v", err)
+	}
+	if err := s.AppendEntries("v2.0.0", []model.BenchmarkEntry{entryV2}, 0); err != nil {
+		t.Fatalf("AppendEntries(v2.0.0) error: %v", err)
+	}
+
+	// Combined releases should have both entries sorted by commit date.
+	relData, err := s.ReadBranchData(ReleasesVirtualBranch)
+	if err != nil {
+		t.Fatalf("ReadBranchData(releases) error: %v", err)
+	}
+	if len(relData) != 2 {
+		t.Fatalf("releases data: got %d entries, want 2", len(relData))
+	}
+	if relData[0].Commit.SHA != "aaa111" || relData[1].Commit.SHA != "bbb222" {
+		t.Errorf("releases order: got [%s, %s], want [aaa111, bbb222]",
+			relData[0].Commit.SHA, relData[1].Commit.SHA)
+	}
+
+	// branches.json should only have "releases" once.
+	branches, err := s.ReadBranches()
+	if err != nil {
+		t.Fatalf("ReadBranches() error: %v", err)
+	}
+	if len(branches) != 1 || branches[0] != ReleasesVirtualBranch {
+		t.Errorf("branches = %v, want [%q]", branches, ReleasesVirtualBranch)
+	}
+}
+
+func TestAppendEntries_SemverTag_RecordsReleaseTags(t *testing.T) {
+	dir := t.TempDir()
+	s, err := New(dir)
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	entryV1 := model.BenchmarkEntry{
+		Commit: model.Commit{SHA: "aaa111", Date: "2024-01-01T00:00:00Z"},
+		Date:   1704067200000,
+		Params: model.RunParams{CPU: "TestCPU", GOOS: "linux", GOARCH: "amd64"},
+		Benchmarks: []model.BenchmarkResult{
+			{Name: "BenchmarkFoo", Value: 100, Unit: "ns/op"},
+		},
+	}
+
+	entryV2 := model.BenchmarkEntry{
+		Commit: model.Commit{SHA: "bbb222", Date: "2024-06-01T00:00:00Z"},
+		Date:   1717200000000,
+		Params: model.RunParams{CPU: "TestCPU", GOOS: "linux", GOARCH: "amd64"},
+		Benchmarks: []model.BenchmarkResult{
+			{Name: "BenchmarkFoo", Value: 80, Unit: "ns/op"},
+		},
+	}
+
+	if err := s.AppendEntries("v1.0.0", []model.BenchmarkEntry{entryV1}, 0); err != nil {
+		t.Fatalf("AppendEntries(v1.0.0) error: %v", err)
+	}
+	if err := s.AppendEntries("v2.0.0", []model.BenchmarkEntry{entryV2}, 0); err != nil {
+		t.Fatalf("AppendEntries(v2.0.0) error: %v", err)
+	}
+
+	// Read the release_tags.json map directly.
+	tags, err := s.readReleaseTags()
+	if err != nil {
+		t.Fatalf("readReleaseTags() error: %v", err)
+	}
+
+	expected := map[string]string{
+		"aaa111": "v1.0.0",
+		"bbb222": "v2.0.0",
+	}
+	if !reflect.DeepEqual(tags, expected) {
+		t.Errorf("release tags = %v, want %v", tags, expected)
+	}
+
+	// Verify the file actually exists on disk.
+	rawData, err := os.ReadFile(s.releaseTagsPath())
+	if err != nil {
+		t.Fatalf("reading release_tags.json: %v", err)
+	}
+	var diskTags map[string]string
+	if err := json.Unmarshal(rawData, &diskTags); err != nil {
+		t.Fatalf("decoding release_tags.json: %v", err)
+	}
+	if !reflect.DeepEqual(diskTags, expected) {
+		t.Errorf("on-disk release tags = %v, want %v", diskTags, expected)
+	}
+}
+
+func TestAppendEntries_RegularBranch_NoReleasesFile(t *testing.T) {
+	dir := t.TempDir()
+	s, err := New(dir)
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	entry := model.BenchmarkEntry{
+		Commit: model.Commit{SHA: "aaa111", Date: "2024-01-01T00:00:00Z"},
+		Date:   1704067200000,
+		Params: model.RunParams{CPU: "TestCPU", GOOS: "linux", GOARCH: "amd64"},
+		Benchmarks: []model.BenchmarkResult{
+			{Name: "BenchmarkFoo", Value: 100, Unit: "ns/op"},
+		},
+	}
+
+	// Append as a regular branch (not semver).
+	if err := s.AppendEntries("main", []model.BenchmarkEntry{entry}, 0); err != nil {
+		t.Fatalf("AppendEntries(main) error: %v", err)
+	}
+
+	// The branch data should exist.
+	data, err := s.ReadBranchData("main")
+	if err != nil {
+		t.Fatalf("ReadBranchData(main) error: %v", err)
+	}
+	if len(data) != 1 {
+		t.Fatalf("main data: got %d entries, want 1", len(data))
+	}
+
+	// The "releases" data file should NOT exist.
+	_, err = os.Stat(s.branchDataPath(ReleasesVirtualBranch))
+	if err == nil {
+		t.Error("releases data file should not exist for a regular branch")
+	}
+
+	// release_tags.json should NOT exist.
+	_, err = os.Stat(s.releaseTagsPath())
+	if err == nil {
+		t.Error("release_tags.json should not exist for a regular branch")
+	}
+
+	// branches.json should contain "main", not "releases".
+	branches, err := s.ReadBranches()
+	if err != nil {
+		t.Fatalf("ReadBranches() error: %v", err)
+	}
+	if len(branches) != 1 || branches[0] != "main" {
+		t.Errorf("branches = %v, want [\"main\"]", branches)
+	}
+}
+
+func TestAppendEntries_MixedBranchesAndTags(t *testing.T) {
+	dir := t.TempDir()
+	s, err := New(dir)
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	mainEntry := model.BenchmarkEntry{
+		Commit: model.Commit{SHA: "aaa111", Date: "2024-01-01T00:00:00Z"},
+		Date:   1704067200000,
+		Params: model.RunParams{CPU: "TestCPU", GOOS: "linux", GOARCH: "amd64"},
+		Benchmarks: []model.BenchmarkResult{
+			{Name: "BenchmarkFoo", Value: 100, Unit: "ns/op"},
+		},
+	}
+	tagEntry := model.BenchmarkEntry{
+		Commit: model.Commit{SHA: "bbb222", Date: "2024-06-01T00:00:00Z"},
+		Date:   1717200000000,
+		Params: model.RunParams{CPU: "TestCPU", GOOS: "linux", GOARCH: "amd64"},
+		Benchmarks: []model.BenchmarkResult{
+			{Name: "BenchmarkFoo", Value: 80, Unit: "ns/op"},
+		},
+	}
+
+	if err := s.AppendEntries("main", []model.BenchmarkEntry{mainEntry}, 0); err != nil {
+		t.Fatalf("AppendEntries(main) error: %v", err)
+	}
+	if err := s.AppendEntries("v1.0.0", []model.BenchmarkEntry{tagEntry}, 0); err != nil {
+		t.Fatalf("AppendEntries(v1.0.0) error: %v", err)
+	}
+
+	// branches.json should have "releases" first, then "main". No "v1.0.0".
+	branches, err := s.ReadBranches()
+	if err != nil {
+		t.Fatalf("ReadBranches() error: %v", err)
+	}
+	expected := []string{ReleasesVirtualBranch, "main"}
+	if !reflect.DeepEqual(branches, expected) {
+		t.Errorf("branches = %v, want %v", branches, expected)
+	}
+
+	// main data should only have mainEntry.
+	mainData, err := s.ReadBranchData("main")
+	if err != nil {
+		t.Fatalf("ReadBranchData(main) error: %v", err)
+	}
+	if len(mainData) != 1 || mainData[0].Commit.SHA != "aaa111" {
+		t.Errorf("main data unexpected: %+v", mainData)
+	}
+
+	// releases data should only have tagEntry.
+	relData, err := s.ReadBranchData(ReleasesVirtualBranch)
+	if err != nil {
+		t.Fatalf("ReadBranchData(releases) error: %v", err)
+	}
+	if len(relData) != 1 || relData[0].Commit.SHA != "bbb222" {
+		t.Errorf("releases data unexpected: %+v", relData)
+	}
+}
+
+func TestAppendEntries_SemverTag_ReplacesDuplicateInReleases(t *testing.T) {
+	dir := t.TempDir()
+	s, err := New(dir)
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	entry1 := model.BenchmarkEntry{
+		Commit: model.Commit{SHA: "aaa111", Date: "2024-01-01T00:00:00Z"},
+		Date:   1704067200000,
+		Params: model.RunParams{CPU: "TestCPU", GOOS: "linux", GOARCH: "amd64"},
+		Benchmarks: []model.BenchmarkResult{
+			{Name: "BenchmarkFoo", Value: 100, Unit: "ns/op"},
+		},
+	}
+
+	// Store v1.0.0 the first time.
+	if err := s.AppendEntries("v1.0.0", []model.BenchmarkEntry{entry1}, 0); err != nil {
+		t.Fatalf("first AppendEntries(v1.0.0) error: %v", err)
+	}
+
+	// Re-run the same tag (same commit + params) with updated value.
+	entry1Updated := entry1
+	entry1Updated.Benchmarks = []model.BenchmarkResult{
+		{Name: "BenchmarkFoo", Value: 90, Unit: "ns/op"},
+	}
+	if err := s.AppendEntries("v1.0.0", []model.BenchmarkEntry{entry1Updated}, 0); err != nil {
+		t.Fatalf("second AppendEntries(v1.0.0) error: %v", err)
+	}
+
+	// releases should have exactly 1 entry (replaced, not duplicated).
+	relData, err := s.ReadBranchData(ReleasesVirtualBranch)
+	if err != nil {
+		t.Fatalf("ReadBranchData(releases) error: %v", err)
+	}
+	if len(relData) != 1 {
+		t.Fatalf("releases data: got %d entries, want 1", len(relData))
+	}
+	if relData[0].Benchmarks[0].Value != 90 {
+		t.Errorf("releases entry value = %v, want 90 (updated)", relData[0].Benchmarks[0].Value)
+	}
+}
+
+func TestAppendEntries_SemverTag_MaxItemsApplied(t *testing.T) {
+	dir := t.TempDir()
+	s, err := New(dir)
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	tags := []struct {
+		tag  string
+		sha  string
+		date string
+	}{
+		{"v1.0.0", "aaa", "2024-01-01T00:00:00Z"},
+		{"v2.0.0", "bbb", "2024-02-01T00:00:00Z"},
+		{"v3.0.0", "ccc", "2024-03-01T00:00:00Z"},
+	}
+
+	for _, tt := range tags {
+		entry := model.BenchmarkEntry{
+			Commit: model.Commit{SHA: tt.sha, Date: tt.date},
+			Params: model.RunParams{CPU: "TestCPU", GOOS: "linux", GOARCH: "amd64"},
+			Benchmarks: []model.BenchmarkResult{
+				{Name: "BenchmarkFoo", Value: 100, Unit: "ns/op"},
+			},
+		}
+		if err := s.AppendEntries(tt.tag, []model.BenchmarkEntry{entry}, 2); err != nil {
+			t.Fatalf("AppendEntries(%s) error: %v", tt.tag, err)
+		}
+	}
+
+	// With maxItems=2, releases should only keep the 2 newest.
+	relData, err := s.ReadBranchData(ReleasesVirtualBranch)
+	if err != nil {
+		t.Fatalf("ReadBranchData(releases) error: %v", err)
+	}
+	if len(relData) != 2 {
+		t.Fatalf("releases data: got %d entries, want 2", len(relData))
+	}
+	if relData[0].Commit.SHA != "bbb" || relData[1].Commit.SHA != "ccc" {
+		t.Errorf("releases entries: got [%s, %s], want [bbb, ccc]",
+			relData[0].Commit.SHA, relData[1].Commit.SHA)
 	}
 }
