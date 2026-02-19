@@ -30,7 +30,7 @@ jobs:
           go-version: ${{ matrix.go }}
 
       - name: Run benchmarks
-        run: go test -bench=. -count=1 -benchtime=200ms -cpus=1,2,4 ./... 2>&1 | tee bench-output.txt
+        run: go test -bench=. -count=1 -benchtime=200ms -cpu=1,2,4 ./... 2>&1 | tee bench-output.txt
 
       - name: Parse benchmark results
         id: parse
