@@ -423,25 +423,48 @@
     );
 
     // Remove benchmarks that don't have data for the latest commit.
-    // This hides graphs for benchmarks that have been removed from the codebase.
+    // This hides graphs for benchmarks that have been removed from the codebase
+    // (e.g. memory reporting turned off, entire benchmarks deleted).
+    // We find the latest commit by walking entries backwards (already sorted
+    // chronologically) and applying the same entry-level filters.
     if (benchMap.size > 0) {
+      var latestBenchNames = new Set();
       var latestCommitSHA = null;
-      var latestDate = -Infinity;
-      for (const dataPoints of benchMap.values()) {
-        if (dataPoints.length > 0) {
-          var last = dataPoints[dataPoints.length - 1];
-          if (last.date > latestDate) {
-            latestDate = last.date;
-            latestCommitSHA = last.commit.sha;
-          }
+      for (var ei = entries.length - 1; ei >= 0; ei--) {
+        var ent = entries[ei];
+        if (filterCPUModel !== null && (ent.cpu || "") !== filterCPUModel)
+          continue;
+        if (filterCGO !== null && !!ent.cgo !== filterCGO) continue;
+        var matched = false;
+        for (var bi = 0; bi < ent.benchmarks.length; bi++) {
+          var b = ent.benchmarks[bi];
+          if (filterPkg !== null && b.package !== filterPkg) continue;
+          if (filterCPU !== null && b.procs !== filterCPU) continue;
+          matched = true;
+        }
+        if (matched) {
+          latestCommitSHA = ent.commit.sha;
+          break;
         }
       }
+      // Collect all benchmark names present in entries with the latest commit SHA
+      // (there may be multiple entries for the same commit, e.g. different CPU models).
       if (latestCommitSHA) {
-        for (const [key, dataPoints] of benchMap) {
-          var hasLatest = dataPoints.some(function (d) {
-            return d.commit.sha === latestCommitSHA;
-          });
-          if (!hasLatest) {
+        for (var ei2 = entries.length - 1; ei2 >= 0; ei2--) {
+          var ent2 = entries[ei2];
+          if (ent2.commit.sha !== latestCommitSHA) continue;
+          if (filterCPUModel !== null && (ent2.cpu || "") !== filterCPUModel)
+            continue;
+          if (filterCGO !== null && !!ent2.cgo !== filterCGO) continue;
+          for (var bi2 = 0; bi2 < ent2.benchmarks.length; bi2++) {
+            var b2 = ent2.benchmarks[bi2];
+            if (filterPkg !== null && b2.package !== filterPkg) continue;
+            if (filterCPU !== null && b2.procs !== filterCPU) continue;
+            latestBenchNames.add(b2.name);
+          }
+        }
+        for (const [key] of benchMap) {
+          if (!latestBenchNames.has(key)) {
             benchMap.delete(key);
           }
         }
