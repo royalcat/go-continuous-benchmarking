@@ -482,6 +482,32 @@
 
   // ---- Package tabs ----
 
+  /**
+   * Compute the longest common directory prefix across package paths.
+   * This strips the Go module path (e.g. "github.com/user/repo/") so tabs
+   * show relative paths like "internal/storage" instead of the full import path.
+   */
+  function commonPackagePrefix(packages) {
+    if (packages.length <= 1) return "";
+
+    var parts0 = packages[0].split("/");
+    var prefixLen = parts0.length;
+
+    for (var i = 1; i < packages.length; i++) {
+      var parts = packages[i].split("/");
+      prefixLen = Math.min(prefixLen, parts.length);
+      for (var j = 0; j < prefixLen; j++) {
+        if (parts[j] !== parts0[j]) {
+          prefixLen = j;
+          break;
+        }
+      }
+      if (prefixLen === 0) return "";
+    }
+
+    return parts0.slice(0, prefixLen).join("/") + "/";
+  }
+
   function renderPackageTabs(packages) {
     packageTabsEl.innerHTML = "";
 
@@ -490,6 +516,8 @@
       currentPackage = packages.length === 1 ? packages[0] : null;
       return;
     }
+
+    var prefix = commonPackagePrefix(packages);
 
     // "All" tab
     var allTab = document.createElement("button");
@@ -501,7 +529,12 @@
     for (var i = 0; i < packages.length; i++) {
       var tab = document.createElement("button");
       tab.className = "package-tab";
-      tab.textContent = packages[i];
+      // Show relative path with module prefix stripped
+      var displayName = prefix
+        ? packages[i].substring(prefix.length)
+        : packages[i];
+      tab.textContent = displayName || packages[i];
+      tab.title = packages[i]; // full path on hover
       tab.dataset.pkg = packages[i];
       packageTabsEl.appendChild(tab);
     }
