@@ -33,6 +33,7 @@ jobs:
         run: go test -bench=. -count=1 -benchtime=200ms ./... 2>&1 | tee bench-output.txt
 
       - name: Parse benchmark results
+        id: parse
         # Local path because this workflow lives in the action repo itself.
         # External consumers should use: royalcat/go-continuous-benchmarking@vX
         # NOTE: using ./ in store mode will mess up local repo state because
@@ -47,7 +48,7 @@ jobs:
       - name: Upload parsed results
         uses: actions/upload-artifact@v4
         with:
-          name: bench-${{ matrix.os }}-cgo${{ matrix.cgo }}
+          name: ${{ steps.parse.outputs.artifact-name }}
           path: benchmark-result/
           retention-days: 1
 

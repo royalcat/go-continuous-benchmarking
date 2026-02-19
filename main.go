@@ -223,6 +223,36 @@ func runParse(args []string) {
 		log.Fatalf("Error writing output log: %v", err)
 	}
 	fmt.Printf("Wrote raw output to %s\n", logPath)
+
+	// Generate a unique artifact name from run parameters so that matrix
+	// jobs never collide when uploading artifacts.
+	artifactName := artifactNameFromParams(entry.Params)
+	fmt.Printf("artifact-name: %s\n", artifactName)
+}
+
+// artifactNameFromParams builds a unique, filesystem-safe artifact name
+// from the run parameters.  Example: "bench-linux-amd64-go1.24.0-cgo1"
+func artifactNameFromParams(p model.RunParams) string {
+	cgoVal := "0"
+	if p.CGO {
+		cgoVal = "1"
+	}
+
+	parts := []string{"bench"}
+
+	if p.GOOS != "" {
+		parts = append(parts, p.GOOS)
+	}
+	if p.GOARCH != "" {
+		parts = append(parts, p.GOARCH)
+	}
+	if p.GoVersion != "" {
+		parts = append(parts, p.GoVersion)
+	}
+
+	parts = append(parts, "cgo"+cgoVal)
+
+	return strings.Join(parts, "-")
 }
 
 // ---------------------------------------------------------------------------

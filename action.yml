@@ -111,6 +111,10 @@ outputs:
     description: "[parse] Path to the directory containing entry.json and output.log"
     value: ${{ steps.parse-tool.outputs.result-dir }}
 
+  artifact-name:
+    description: "[parse] A unique artifact name derived from the detected run parameters (GOOS, GOARCH, Go version, CGO). Use this as the artifact name in upload-artifact to avoid collisions in matrix builds."
+    value: ${{ steps.parse-tool.outputs.artifact-name }}
+
   benchmark-results-json:
     description: "[store] Path to the branch JSON file with all benchmark entries"
     value: ${{ steps.store-tool.outputs.results-json }}
@@ -225,7 +229,7 @@ runs:
           GO_MODULE_FLAG="-go-module=${{ inputs.go-module }}"
         fi
 
-        "$TOOL_BIN" parse \
+        PARSE_OUTPUT=$("$TOOL_BIN" parse \
           ${OUTPUT_FLAG} \
           -result-dir="${RESULT_DIR}" \
           -commit-sha="${{ steps.resolve.outputs.commit-sha }}" \
@@ -237,8 +241,12 @@ runs:
           ${CPU_FLAG} \
           ${CGO_FLAG} \
           ${GO_VERSION_FLAG} \
-          ${GO_MODULE_FLAG}
+          ${GO_MODULE_FLAG} 2>&1)
+        echo "$PARSE_OUTPUT"
 
+        # Extract the artifact name from the tool's stdout.
+        ARTIFACT_NAME=$(echo "$PARSE_OUTPUT" | grep '^artifact-name: ' | tail -1 | sed 's/^artifact-name: //')
+        echo "artifact-name=${ARTIFACT_NAME}" >> "$GITHUB_OUTPUT"
         echo "result-dir=${RESULT_DIR}" >> "$GITHUB_OUTPUT"
 
     # ==================================================================
