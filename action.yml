@@ -8,7 +8,12 @@ branding:
 
 inputs:
   output-file-path:
-    description: "Path to the file containing go test -bench output"
+    description: |
+      Path(s) to file(s) containing go test -bench output.
+      Supports glob patterns (e.g. "results/*/output.txt"), comma-separated paths,
+      and newline-separated paths. Each output file may have a sibling "metadata.json"
+      with per-file CPU and CGO overrides: {"cpu": "...", "cgo": true/false}.
+      Reads from stdin if empty.
     required: true
 
   branch:
@@ -57,12 +62,12 @@ inputs:
     default: "false"
 
   cpu-model:
-    description: "CPU model name to record alongside benchmark results. If empty, auto-detected from the runner machine."
+    description: "Default CPU model name to record. Overridden by per-file metadata.json. If empty, auto-detected from the runner machine or go test output."
     required: false
     default: ""
 
   cgo-enabled:
-    description: "CGO enabled status: 'true', 'false', or '' (auto-detect from CGO_ENABLED env var)"
+    description: "Default CGO enabled status: 'true', 'false', or '' (auto-detect from CGO_ENABLED env var). Overridden by per-file metadata.json."
     required: false
     default: ""
 
@@ -140,6 +145,52 @@ runs:
         go build -o "$TOOL_BIN" .
         echo "tool-bin=${TOOL_BIN}" >> "$GITHUB_OUTPUT"
 
+    - name: Resolve output file paths
+      id: resolve-files
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        RAW_PATHS="${{ inputs.output-file-path }}"
+
+        # Convert all paths to absolute.
+        # The input may be comma-separated, newline-separated, or contain globs.
+        # We resolve globs and make paths absolute, then output as comma-separated.
+        ABS_PATHS=""
+
+        # Split by comma first, then by newline
+        IFS=',' read -ra COMMA_PARTS <<< "$RAW_PATHS"
+        for COMMA_PART in "${COMMA_PARTS[@]}"; do
+          while IFS= read -r LINE; do
+            LINE="$(echo "$LINE" | xargs)"  # trim whitespace
+            [ -z "$LINE" ] && continue
+
+            # Try glob expansion
+            EXPANDED=()
+            # Use nullglob so non-matching globs expand to nothing
+            shopt -s nullglob
+            EXPANDED=( $LINE )
+            shopt -u nullglob
+
+            if [ ${#EXPANDED[@]} -eq 0 ]; then
+              # No glob match, keep as-is (tool will give clear error)
+              EXPANDED=("$LINE")
+            fi
+
+            for FILE in "${EXPANDED[@]}"; do
+              ABS="$(cd "$(dirname "$FILE")" 2>/dev/null && pwd)/$(basename "$FILE")"
+              if [ -n "$ABS_PATHS" ]; then
+                ABS_PATHS="${ABS_PATHS},${ABS}"
+              else
+                ABS_PATHS="${ABS}"
+              fi
+            done
+          done <<< "$COMMA_PART"
+        done
+
+        echo "abs-paths=${ABS_PATHS}" >> "$GITHUB_OUTPUT"
+        echo "Resolved output files: ${ABS_PATHS}"
+
     - name: Fetch gh-pages branch
       if: inputs.skip-fetch-gh-pages != 'true'
       shell: bash
@@ -165,13 +216,10 @@ runs:
         GH_PAGES_BRANCH="${{ inputs.gh-pages-branch }}"
         DATA_DIR="${{ inputs.benchmark-data-dir-path }}"
         TOOL_BIN="${{ steps.build-tool.outputs.tool-bin }}"
-        OUTPUT_FILE="${{ inputs.output-file-path }}"
+        OUTPUT_FILES="${{ steps.resolve-files.outputs.abs-paths }}"
         BRANCH="${{ steps.resolve.outputs.branch }}"
         MAX_ITEMS="${{ inputs.max-items-in-chart }}"
         REPO_URL="${{ steps.resolve.outputs.repo-url }}"
-
-        # Make output file path absolute before switching branches
-        OUTPUT_FILE_ABS="$(cd "$(dirname "$OUTPUT_FILE")" && pwd)/$(basename "$OUTPUT_FILE")"
 
         # Configure git identity early (needed if we create an orphan branch)
         git config user.name "github-actions[bot]"
@@ -193,7 +241,7 @@ runs:
         # Ensure data directory exists
         mkdir -p "${DATA_DIR}"
 
-        # Run the benchmark tool
+        # Build tool flags
         MAX_ITEMS_FLAG=""
         if [ "$MAX_ITEMS" != "0" ] && [ -n "$MAX_ITEMS" ]; then
           MAX_ITEMS_FLAG="-max-items=${MAX_ITEMS}"
@@ -214,8 +262,13 @@ runs:
           GO_MODULE_FLAG="-go-module=${{ inputs.go-module }}"
         fi
 
+        OUTPUT_FLAG=""
+        if [ -n "$OUTPUT_FILES" ]; then
+          OUTPUT_FLAG="-output-file=${OUTPUT_FILES}"
+        fi
+
         "$TOOL_BIN" \
-          -output-file="${OUTPUT_FILE_ABS}" \
+          ${OUTPUT_FLAG} \
           -branch="${BRANCH}" \
           -data-dir="${DATA_DIR}" \
           -commit-sha="${{ steps.resolve.outputs.commit-sha }}" \

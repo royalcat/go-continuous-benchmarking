@@ -13,6 +13,31 @@ import (
 	"github.com/royalcat/go-continuous-benchmarking/internal/model"
 )
 
+// FileMetadata holds per-file metadata that accompanies a benchmark output file.
+// It is typically stored as a sidecar JSON file (e.g. "metadata.json") in the
+// same directory as the benchmark output.
+type FileMetadata struct {
+	CPU string `json:"cpu,omitempty"`
+	CGO *bool  `json:"cgo,omitempty"` // pointer to distinguish unset from false
+}
+
+// LoadFileMetadata reads a sidecar metadata JSON file from the given path.
+// If the file does not exist, a zero FileMetadata is returned with no error.
+func LoadFileMetadata(path string) (FileMetadata, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return FileMetadata{}, nil
+		}
+		return FileMetadata{}, fmt.Errorf("reading file metadata %q: %w", path, err)
+	}
+	var m FileMetadata
+	if err := json.Unmarshal(data, &m); err != nil {
+		return FileMetadata{}, fmt.Errorf("decoding file metadata %q: %w", path, err)
+	}
+	return m, nil
+}
+
 // Storage manages benchmark data files on disk.
 // The layout on disk is:
 //
@@ -160,6 +185,20 @@ func (s *Storage) WriteBranchData(branch string, entries model.BranchData) error
 // If maxItems > 0, the oldest entries are trimmed so that at most maxItems
 // entries remain per branch.
 func (s *Storage) AppendEntry(branch string, entry model.BenchmarkEntry, maxItems int) error {
+	return s.AppendEntries(branch, []model.BenchmarkEntry{entry}, maxItems)
+}
+
+// AppendEntries adds multiple benchmark entries for the given branch in a single
+// read-modify-write cycle. This is more efficient than calling AppendEntry in a
+// loop when processing multiple output files (e.g. from a matrix build).
+//
+// If maxItems > 0, the oldest entries are trimmed so that at most maxItems
+// entries remain per branch after all new entries have been appended.
+func (s *Storage) AppendEntries(branch string, newEntries []model.BenchmarkEntry, maxItems int) error {
+	if len(newEntries) == 0 {
+		return nil
+	}
+
 	// Register the branch in the branch list.
 	if _, err := s.EnsureBranch(branch); err != nil {
 		return fmt.Errorf("ensuring branch %q: %w", branch, err)
@@ -171,8 +210,8 @@ func (s *Storage) AppendEntry(branch string, entry model.BenchmarkEntry, maxItem
 		return err
 	}
 
-	// Append the new entry.
-	entries = append(entries, entry)
+	// Append all new entries.
+	entries = append(entries, newEntries...)
 
 	// Trim old entries if maxItems is set.
 	if maxItems > 0 && len(entries) > maxItems {
