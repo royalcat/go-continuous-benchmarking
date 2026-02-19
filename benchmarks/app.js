@@ -338,7 +338,11 @@
     wrapper.appendChild(canvas);
     container.appendChild(card);
 
+    var isReleases = currentBranch === "releases";
     var labels = dataset.map(function (d) {
+      if (isReleases && d.commit.tag) {
+        return d.commit.tag;
+      }
       return shortSHA(d.commit.sha);
     });
     var values = dataset.map(function (d) {
@@ -422,7 +426,7 @@
           x: {
             title: {
               display: true,
-              text: "Commit",
+              text: isReleases ? "Release" : "Commit",
               color: textColor,
             },
             ticks: { color: textColor },
@@ -448,6 +452,9 @@
                 if (!items.length) return "";
                 var idx = items[0].dataIndex;
                 var d = dataset[idx];
+                if (isReleases && d.commit.tag) {
+                  return d.commit.tag + " (" + shortSHA(d.commit.sha) + ")";
+                }
                 return "Commit: " + shortSHA(d.commit.sha);
               },
               beforeBody: function (items) {
@@ -1012,6 +1019,25 @@
     var base = getBasePath();
     var safeName = branch.replace(/[/\\:*?"<>|]/g, "_");
     var data = await fetchJSON(base + "data/" + safeName + ".json");
+
+    // For the "releases" virtual branch, try to attach the tag name to each
+    // entry by loading the tag map that the store command generates.
+    if (branch === "releases") {
+      try {
+        var tagMap = await fetchJSON(base + "data/release_tags.json");
+        if (tagMap) {
+          for (var i = 0; i < data.length; i++) {
+            var sha = data[i].commit && data[i].commit.sha;
+            if (sha && tagMap[sha]) {
+              data[i].commit.tag = tagMap[sha];
+            }
+          }
+        }
+      } catch (_e) {
+        // release_tags.json is optional; entries will use short SHA labels
+      }
+    }
+
     return data;
   }
 
@@ -1113,12 +1139,19 @@
       return;
     }
 
-    // Populate branch selector
+    // Populate branch selector.
+    // "releases" is always shown first with a special label; individual semver
+    // tags are hidden (they are aggregated under "releases").
     branchSelect.innerHTML = "";
     for (var i = 0; i < branches.length; i++) {
+      var brName = branches[i];
       var opt = document.createElement("option");
-      opt.value = branches[i];
-      opt.textContent = branches[i];
+      opt.value = brName;
+      if (brName === "releases") {
+        opt.textContent = "📦 releases";
+      } else {
+        opt.textContent = brName;
+      }
       branchSelect.appendChild(opt);
     }
 
