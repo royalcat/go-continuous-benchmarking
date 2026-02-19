@@ -27,7 +27,7 @@ jobs:
       - name: Store benchmark results
         uses: royalcat/go-continuous-benchmarking@master
         with:
-          output-file-path: project/bench-output.txt
+          output-file-path: bench-output.txt
           github-token: ${{ secrets.GITHUB_TOKEN }}
           auto-push: "true"
           max-items-in-chart: "100"
@@ -39,7 +39,7 @@ jobs:
       - name: Store benchmark results
         uses: royalcat/go-continuous-benchmarking@master
         with:
-          output-file-path: project/bench-output.txt
+          output-file-path: bench-output.txt
           github-token: ${{ secrets.GITHUB_TOKEN }}
           auto-push: "true"
           max-items-in-chart: "100"
