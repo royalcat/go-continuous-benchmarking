@@ -61,6 +61,11 @@ inputs:
     required: false
     default: ""
 
+  cgo-enabled:
+    description: "CGO enabled status: 'true', 'false', or '' (auto-detect from CGO_ENABLED env var)"
+    required: false
+    default: ""
+
   fail-on-alert:
     description: "If true, fail the workflow when a benchmark result exceeds the alert threshold"
     required: false
@@ -194,6 +199,11 @@ runs:
           CPU_MODEL_FLAG="-cpu-model=${{ inputs.cpu-model }}"
         fi
 
+        CGO_FLAG=""
+        if [ -n "${{ inputs.cgo-enabled }}" ]; then
+          CGO_FLAG="-cgo=${{ inputs.cgo-enabled }}"
+        fi
+
         "$TOOL_BIN" \
           -output-file="${OUTPUT_FILE_ABS}" \
           -branch="${BRANCH}" \
@@ -205,7 +215,8 @@ runs:
           -commit-url="${{ steps.commit-info.outputs.commit-url }}" \
           -repo-url="${REPO_URL}" \
           ${MAX_ITEMS_FLAG} \
-          ${CPU_MODEL_FLAG}
+          ${CPU_MODEL_FLAG} \
+          ${CGO_FLAG}
 
         echo "results-json=${DATA_DIR}/data/$(echo "${BRANCH}" | sed 's/[\/\\:*?"<>|]/_/g').json" >> "$GITHUB_OUTPUT"
 

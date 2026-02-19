@@ -32,6 +32,7 @@ func main() {
 		maxItems     int
 		repoURL      string
 		cpuModel     string
+		cgoFlag      string
 	)
 
 	flag.StringVar(&outputFile, "output-file", "", "Path to go test -bench output file (reads stdin if empty)")
@@ -45,6 +46,7 @@ func main() {
 	flag.IntVar(&maxItems, "max-items", 0, "Maximum number of benchmark entries per branch (0 = unlimited)")
 	flag.StringVar(&repoURL, "repo-url", "", "Repository URL for display in the frontend header")
 	flag.StringVar(&cpuModel, "cpu-model", "", "CPU model name to record. If empty, auto-detected from the current machine")
+	flag.StringVar(&cgoFlag, "cgo", "", "CGO enabled status: 'true', 'false', or '' (auto-detect from CGO_ENABLED env var)")
 
 	flag.Parse()
 
@@ -64,6 +66,10 @@ func main() {
 	} else {
 		fmt.Printf("Using provided CPU model: %s\n", cpuModel)
 	}
+
+	// Detect CGO status: explicit flag > CGO_ENABLED env var.
+	cgoEnabled := detectCGO(cgoFlag)
+	fmt.Printf("CGO enabled: %v\n", cgoEnabled)
 
 	// Read benchmark output.
 	var reader io.Reader
@@ -100,6 +106,7 @@ func main() {
 		},
 		Date:       time.Now().UnixMilli(),
 		CPU:        cpuModel,
+		CGO:        cgoEnabled,
 		Benchmarks: benchmarks,
 	}
 
@@ -160,4 +167,27 @@ func minInt(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// detectCGO determines CGO enabled status.
+// If flagVal is "true"/"false", use that. Otherwise auto-detect from CGO_ENABLED env var.
+// If env var is also unset, defaults to true (Go's default behavior).
+func detectCGO(flagVal string) bool {
+	flagVal = strings.TrimSpace(strings.ToLower(flagVal))
+	switch flagVal {
+	case "true", "1":
+		return true
+	case "false", "0":
+		return false
+	default:
+		// Auto-detect from environment
+		env := os.Getenv("CGO_ENABLED")
+		switch strings.TrimSpace(env) {
+		case "0":
+			return false
+		default:
+			// CGO is enabled by default in Go when not cross-compiling
+			return true
+		}
+	}
 }
