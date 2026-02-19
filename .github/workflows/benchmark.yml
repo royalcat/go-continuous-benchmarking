@@ -10,9 +10,6 @@ permissions:
 jobs:
   benchmark:
     name: Run benchmarks
-    concurrency:
-      group: ${{ github.workflow }}-${{ github.ref }}
-      cancel-in-progress: false
     strategy:
       fail-fast: false
       matrix:
