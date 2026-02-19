@@ -87,14 +87,14 @@ func ParseGoBenchOutputWithMeta(r io.Reader) ([]model.BenchmarkResult, OutputMet
 		iters := m[3]
 		rest := m[4]
 
-		procs := 0
+		procs := 1
 		if procsStr != "" {
 			procs, _ = strconv.Atoi(procsStr)
 		}
 
 		extra := iters + " times"
 		if procs > 0 {
-			extra += "\n" + procsStr + " procs"
+			extra += "\n" + strconv.Itoa(procs) + " procs"
 		}
 
 		// Parse value/unit pairs from the remainder.

@@ -113,9 +113,9 @@ PASS
 		Name:    "BenchmarkSimple",
 		Value:   300.0,
 		Unit:    "ns/op",
-		Extra:   "5000000 times",
+		Extra:   "5000000 times\n1 procs",
 		Package: "github.com/user/repo",
-		Procs:   0,
+		Procs:   1,
 	})
 }
 
@@ -477,7 +477,7 @@ func TestParseGoBenchOutput_DifferentProcsValues(t *testing.T) {
 	input := `goos: linux
 goarch: amd64
 pkg: github.com/user/repo
-BenchmarkWork-1        1000000              5000 ns/op
+BenchmarkWork	        1000000             5000 ns/op
 BenchmarkWork-4         400000              1300 ns/op
 BenchmarkWork-8         800000               700 ns/op
 PASS
