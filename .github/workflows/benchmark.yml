@@ -2,7 +2,6 @@ name: Benchmarks
 
 on:
   push:
-    branches: [master]
 
 permissions:
   contents: write
@@ -13,8 +12,9 @@ jobs:
     name: Run benchmarks
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
+          ref: ${{ github.ref }}
           fetch-depth: 0
 
       - uses: actions/setup-go@v5
@@ -31,7 +31,12 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           auto-push: "true"
           max-items-in-chart: "100"
-          cgo: false
+          cgo-enabled: false
+
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
 
       - name: Run benchmarks (WITH CGO)
         run: CGO_ENABLED=1 go test -bench=. -count=1 -benchtime=200ms ./... 2>&1 | tee bench-output.txt
@@ -43,4 +48,4 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           auto-push: "true"
           max-items-in-chart: "100"
-          cgo: true
+          cgo-enabled: true
