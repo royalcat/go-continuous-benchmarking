@@ -13,14 +13,11 @@ jobs:
     name: Run benchmarks
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-        with:
-          path: action/go-continuous-benchmarking
-          fetch-depth: 0
+      - name: Checkout action to separate directory
+        run: git clone https://github.com/yourusername/go-continuous-benchmarking.git /opt/go-continuous-benchmarking
 
       - uses: actions/checkout@v4
         with:
-          path: project
           fetch-depth: 0
 
       - uses: actions/setup-go@v5
@@ -28,10 +25,10 @@ jobs:
           go-version: "1.24"
 
       - name: Run benchmarks (WITHOUT CGO)
-        run: cd project && CGO_ENABLED=0 go test -bench=. -benchmem -count=1 -benchtime=200ms ./... 2>&1 | tee bench-output.txt
+        run: CGO_ENABLED=0 go test -bench=. -benchmem -count=1 -benchtime=200ms ./... 2>&1 | tee bench-output.txt
 
       - name: Store benchmark results
-        uses: ./action/go-continuous-benchmarking
+        uses: /opt/go-continuous-benchmarking
         with:
           output-file-path: project/bench-output.txt
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -40,10 +37,10 @@ jobs:
           cgo: false
 
       - name: Run benchmarks (WITH CGO)
-        run: cd project && CGO_ENABLED=1 go test -bench=. -benchmem -count=1 -benchtime=200ms ./... 2>&1 | tee bench-output.txt
+        run: CGO_ENABLED=1 go test -bench=. -benchmem -count=1 -benchtime=200ms ./... 2>&1 | tee bench-output.txt
 
       - name: Store benchmark results
-        uses: ./action/go-continuous-benchmarking
+        uses: /opt/go-continuous-benchmarking
         with:
           output-file-path: project/bench-output.txt
           github-token: ${{ secrets.GITHUB_TOKEN }}
