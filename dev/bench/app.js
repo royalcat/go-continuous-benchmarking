@@ -20,6 +20,8 @@
   const cpuSelect = document.getElementById("cpu-select");
   const cpuModelSelect = document.getElementById("cpu-model-select");
   const cpuModelGroup = document.getElementById("cpu-model-group");
+  const cgoCheckbox = document.getElementById("cgo-checkbox");
+  const cgoGroup = document.getElementById("cgo-group");
   const filterInput = document.getElementById("filter-input");
   const packageTabsEl = document.getElementById("package-tabs");
   const mainEl = document.getElementById("main");
@@ -130,6 +132,18 @@
   }
 
   /**
+   * Extract the set of CGO values present in data entries.
+   * Returns a Set of booleans.
+   */
+  function extractCGOValues(entries) {
+    const values = new Set();
+    for (const entry of entries) {
+      values.add(!!entry.cgo);
+    }
+    return values;
+  }
+
+  /**
    * Get the base benchmark name (for grouping).
    * Strips the " - unit" suffix if present.
    */
@@ -155,6 +169,7 @@
     filterPkg,
     filterCPU,
     filterCPUModel,
+    filterCGO,
   ) {
     const map = new Map();
     for (const entry of entries) {
@@ -164,6 +179,11 @@
 
       // Filter by CPU model at entry level
       if (filterCPUModel !== null && entryCPU !== filterCPUModel) {
+        continue;
+      }
+
+      // Filter by CGO status at entry level
+      if (filterCGO !== null && !!entry.cgo !== filterCGO) {
         continue;
       }
 
@@ -380,8 +400,15 @@
 
     var filterCPUModel = null;
     var cpuModelVal = cpuModelSelect.value;
-    if (cpuModelVal !== "all") {
+    if (cpuModelVal) {
       filterCPUModel = cpuModelVal;
+    }
+
+    // CGO filter: only apply when both values exist in data
+    var filterCGO = null;
+    var cgoValues = extractCGOValues(entries);
+    if (cgoValues.has(true) && cgoValues.has(false)) {
+      filterCGO = cgoCheckbox.checked;
     }
 
     var filterPkg = currentPackage;
@@ -391,6 +418,7 @@
       filterPkg,
       filterCPU,
       filterCPUModel,
+      filterCGO,
     );
     var filterText = (filterInput.value || "").toLowerCase().trim();
 
@@ -551,11 +579,6 @@
 
     cpuModelSelect.innerHTML = "";
 
-    var allOpt = document.createElement("option");
-    allOpt.value = "all";
-    allOpt.textContent = "All";
-    cpuModelSelect.appendChild(allOpt);
-
     for (var i = 0; i < models.length; i++) {
       var opt = document.createElement("option");
       opt.value = models[i];
@@ -566,20 +589,40 @@
     // Hide the selector entirely when no CPU info exists in the data
     if (models.length === 0) {
       cpuModelGroup.style.display = "none";
-      cpuModelSelect.value = "all";
     } else {
       cpuModelGroup.style.display = "flex";
-      if (models.length === 1) {
-        cpuModelSelect.value = models[0];
-      } else if (currentVal && models.indexOf(currentVal) >= 0) {
+      if (currentVal && models.indexOf(currentVal) >= 0) {
         cpuModelSelect.value = currentVal;
       } else {
-        cpuModelSelect.value = "all";
+        cpuModelSelect.value = models[0];
       }
     }
   }
 
   cpuModelSelect.addEventListener("change", function () {
+    if (currentBranchData) {
+      renderBranch(currentBranchData);
+    }
+  });
+
+  // ---- CGO checkbox ----
+
+  function populateCGOCheckbox(entries) {
+    var values = extractCGOValues(entries);
+    var hasBoth = values.has(true) && values.has(false);
+
+    if (hasBoth) {
+      // Data contains both CGO enabled and disabled entries: show the toggle
+      cgoGroup.style.display = "flex";
+    } else {
+      // Only one CGO state in the data: hide the toggle, no filtering needed
+      cgoGroup.style.display = "none";
+      // Set checkbox to reflect what the data has
+      cgoCheckbox.checked = values.has(true);
+    }
+  }
+
+  cgoCheckbox.addEventListener("change", function () {
     if (currentBranchData) {
       renderBranch(currentBranchData);
     }
@@ -631,9 +674,10 @@
       currentBranchData = await loadBranchData(branch);
       dlButton.disabled = false;
 
-      // Populate CPU selectors from data
+      // Populate CPU selectors and CGO checkbox from data
       populateCPUSelector(currentBranchData);
       populateCPUModelSelector(currentBranchData);
+      populateCGOCheckbox(currentBranchData);
 
       // Extract and render package tabs
       var packages = extractPackages(currentBranchData);
