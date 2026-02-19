@@ -248,7 +248,7 @@ func BenchmarkWriteMetadata(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 	for b.Loop() {
-		if err := s.WriteMetadata("https://github.com/test/repo"); err != nil {
+		if err := s.WriteMetadata("https://github.com/test/repo", "github.com/test/repo"); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -260,7 +260,7 @@ func BenchmarkReadMetadata(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	if err := s.WriteMetadata("https://github.com/test/repo"); err != nil {
+	if err := s.WriteMetadata("https://github.com/test/repo", "github.com/test/repo"); err != nil {
 		b.Fatal(err)
 	}
 

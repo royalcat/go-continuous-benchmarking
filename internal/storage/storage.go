@@ -190,6 +190,7 @@ func (s *Storage) AppendEntry(branch string, entry model.BenchmarkEntry, maxItem
 type Metadata struct {
 	RepoURL    string `json:"repoUrl"`
 	LastUpdate int64  `json:"lastUpdate"`
+	GoModule   string `json:"goModule,omitempty"`
 }
 
 // metadataPath returns the path to metadata.json.
@@ -215,10 +216,11 @@ func (s *Storage) ReadMetadata() (Metadata, error) {
 
 // WriteMetadata writes (or updates) metadata.json with the given repo URL
 // and sets LastUpdate to the current time.
-func (s *Storage) WriteMetadata(repoURL string) error {
+func (s *Storage) WriteMetadata(repoURL string, goModule string) error {
 	m := Metadata{
 		RepoURL:    repoURL,
 		LastUpdate: time.Now().UnixMilli(),
+		GoModule:   goModule,
 	}
 	data, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {

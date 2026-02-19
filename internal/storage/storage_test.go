@@ -401,7 +401,8 @@ func TestWriteAndReadMetadata(t *testing.T) {
 	}
 
 	repoURL := "https://github.com/test/repo"
-	if err := s.WriteMetadata(repoURL); err != nil {
+	goModule := "github.com/test/repo"
+	if err := s.WriteMetadata(repoURL, goModule); err != nil {
 		t.Fatalf("WriteMetadata() error: %v", err)
 	}
 
@@ -411,6 +412,9 @@ func TestWriteAndReadMetadata(t *testing.T) {
 	}
 	if meta.RepoURL != repoURL {
 		t.Errorf("RepoURL: got %q, want %q", meta.RepoURL, repoURL)
+	}
+	if meta.GoModule != goModule {
+		t.Errorf("GoModule: got %q, want %q", meta.GoModule, goModule)
 	}
 	if meta.LastUpdate <= 0 {
 		t.Errorf("LastUpdate should be positive, got %d", meta.LastUpdate)

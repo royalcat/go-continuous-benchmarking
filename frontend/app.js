@@ -35,6 +35,7 @@
   let currentBranch = null;
   let currentPackage = null; // null = "All" or first tab
   let chartInstances = []; // keep references so we can destroy on re-render
+  let goModulePath = ""; // Go module path from metadata, used to shorten package names
 
   // ---- Helpers ----
 
@@ -483,29 +484,21 @@
   // ---- Package tabs ----
 
   /**
-   * Compute the longest common directory prefix across package paths.
-   * This strips the Go module path (e.g. "github.com/user/repo/") so tabs
-   * show relative paths like "internal/storage" instead of the full import path.
+   * Strip the Go module path prefix from a full package import path.
+   * E.g. "github.com/user/repo/internal/storage" -> "internal/storage"
+   * Falls back to the full path if the module prefix doesn't match.
    */
-  function commonPackagePrefix(packages) {
-    if (packages.length <= 1) return "";
-
-    var parts0 = packages[0].split("/");
-    var prefixLen = parts0.length;
-
-    for (var i = 1; i < packages.length; i++) {
-      var parts = packages[i].split("/");
-      prefixLen = Math.min(prefixLen, parts.length);
-      for (var j = 0; j < prefixLen; j++) {
-        if (parts[j] !== parts0[j]) {
-          prefixLen = j;
-          break;
-        }
-      }
-      if (prefixLen === 0) return "";
+  function relativePackageName(fullPkg) {
+    if (!goModulePath) return fullPkg;
+    var prefix = goModulePath;
+    if (!prefix.endsWith("/")) prefix += "/";
+    if (fullPkg.startsWith(prefix)) {
+      return fullPkg.substring(prefix.length) || fullPkg;
     }
-
-    return parts0.slice(0, prefixLen).join("/") + "/";
+    if (fullPkg === goModulePath) {
+      return ".";
+    }
+    return fullPkg;
   }
 
   function renderPackageTabs(packages) {
@@ -517,8 +510,6 @@
       return;
     }
 
-    var prefix = commonPackagePrefix(packages);
-
     // "All" tab
     var allTab = document.createElement("button");
     allTab.className = "package-tab";
@@ -529,11 +520,8 @@
     for (var i = 0; i < packages.length; i++) {
       var tab = document.createElement("button");
       tab.className = "package-tab";
-      // Show relative path with module prefix stripped
-      var displayName = prefix
-        ? packages[i].substring(prefix.length)
-        : packages[i];
-      tab.textContent = displayName || packages[i];
+      // Show relative path with Go module prefix stripped
+      tab.textContent = relativePackageName(packages[i]);
       tab.title = packages[i]; // full path on hover
       tab.dataset.pkg = packages[i];
       packageTabsEl.appendChild(tab);
@@ -675,6 +663,9 @@
       if (metadata.repoUrl) {
         repoLinkEl.href = metadata.repoUrl;
         repoLinkEl.textContent = metadata.repoUrl;
+      }
+      if (metadata.goModule) {
+        goModulePath = metadata.goModule;
       }
     } catch {
       // metadata.json is optional

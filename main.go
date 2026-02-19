@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"embed"
 	"flag"
 	"fmt"
@@ -33,6 +34,7 @@ func main() {
 		repoURL      string
 		cpuModel     string
 		cgoFlag      string
+		goModule     string
 	)
 
 	flag.StringVar(&outputFile, "output-file", "", "Path to go test -bench output file (reads stdin if empty)")
@@ -47,6 +49,7 @@ func main() {
 	flag.StringVar(&repoURL, "repo-url", "", "Repository URL for display in the frontend header")
 	flag.StringVar(&cpuModel, "cpu-model", "", "CPU model name to record. If empty, auto-detected from the current machine")
 	flag.StringVar(&cgoFlag, "cgo", "", "CGO enabled status: 'true', 'false', or '' (auto-detect from CGO_ENABLED env var)")
+	flag.StringVar(&goModule, "go-module", "", "Go module path to strip from package names in the dashboard. If empty, auto-detected from go.mod")
 
 	flag.Parse()
 
@@ -70,6 +73,16 @@ func main() {
 	// Detect CGO status: explicit flag > CGO_ENABLED env var.
 	cgoEnabled := detectCGO(cgoFlag)
 	fmt.Printf("CGO enabled: %v\n", cgoEnabled)
+
+	// Detect Go module path if not explicitly provided.
+	if goModule == "" {
+		goModule = detectGoModule(repoURL)
+		if goModule != "" {
+			fmt.Printf("Auto-detected Go module: %s\n", goModule)
+		}
+	} else {
+		fmt.Printf("Using provided Go module: %s\n", goModule)
+	}
 
 	// Read benchmark output.
 	var reader io.Reader
@@ -124,8 +137,8 @@ func main() {
 	fmt.Printf("Stored benchmark data for branch %q (commit %s)\n", branch, commitSHA[:minInt(7, len(commitSHA))])
 
 	// Write repo URL metadata file for the frontend.
-	if repoURL != "" {
-		if err := store.WriteMetadata(repoURL); err != nil {
+	if repoURL != "" || goModule != "" {
+		if err := store.WriteMetadata(repoURL, goModule); err != nil {
 			log.Fatalf("Error writing metadata: %v", err)
 		}
 	}
@@ -167,6 +180,49 @@ func minInt(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// detectGoModule tries to find the Go module path.
+// It first tries parsing go.mod in the current directory, then falls back
+// to deriving the module path from the repo URL.
+func detectGoModule(repoURL string) string {
+	// Try go.mod in current directory
+	if mod := parseGoMod("go.mod"); mod != "" {
+		return mod
+	}
+
+	// Fall back to repo URL: "https://github.com/user/repo" -> "github.com/user/repo"
+	if repoURL != "" {
+		trimmed := strings.TrimSuffix(repoURL, "/")
+		trimmed = strings.TrimSuffix(trimmed, ".git")
+		for _, prefix := range []string{"https://", "http://"} {
+			if strings.HasPrefix(trimmed, prefix) {
+				return strings.TrimPrefix(trimmed, prefix)
+			}
+		}
+	}
+
+	return ""
+}
+
+// parseGoMod reads a go.mod file and extracts the module path from the
+// "module" directive. Returns empty string if the file doesn't exist or
+// can't be parsed.
+func parseGoMod(path string) string {
+	f, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if strings.HasPrefix(line, "module ") {
+			return strings.TrimSpace(strings.TrimPrefix(line, "module "))
+		}
+	}
+	return ""
 }
 
 // detectCGO determines CGO enabled status.
