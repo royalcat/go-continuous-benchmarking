@@ -189,6 +189,13 @@ func TestWriteAndReadBranchData(t *testing.T) {
 				URL:     "https://example.com/commit/abc123",
 			},
 			Date: 1704067200000,
+			Params: model.RunParams{
+				CPU:       "Intel Xeon",
+				GOOS:      "linux",
+				GOARCH:    "amd64",
+				GoVersion: "go1.22.0",
+				CGO:       true,
+			},
 			Benchmarks: []model.BenchmarkResult{
 				{Name: "BenchmarkFoo", Value: 1234.5, Unit: "ns/op", Extra: "1000 times\n8 procs"},
 			},
@@ -210,6 +217,21 @@ func TestWriteAndReadBranchData(t *testing.T) {
 	if got[0].Commit.SHA != "abc123" {
 		t.Errorf("commit SHA: got %q, want %q", got[0].Commit.SHA, "abc123")
 	}
+	if got[0].Params.CPU != "Intel Xeon" {
+		t.Errorf("CPU: got %q, want %q", got[0].Params.CPU, "Intel Xeon")
+	}
+	if got[0].Params.GOOS != "linux" {
+		t.Errorf("GOOS: got %q, want %q", got[0].Params.GOOS, "linux")
+	}
+	if got[0].Params.GOARCH != "amd64" {
+		t.Errorf("GOARCH: got %q, want %q", got[0].Params.GOARCH, "amd64")
+	}
+	if got[0].Params.GoVersion != "go1.22.0" {
+		t.Errorf("GoVersion: got %q, want %q", got[0].Params.GoVersion, "go1.22.0")
+	}
+	if got[0].Params.CGO != true {
+		t.Errorf("CGO: got %v, want true", got[0].Params.CGO)
+	}
 	if len(got[0].Benchmarks) != 1 {
 		t.Fatalf("expected 1 benchmark, got %d", len(got[0].Benchmarks))
 	}
@@ -228,6 +250,7 @@ func TestAppendEntry(t *testing.T) {
 	entry1 := model.BenchmarkEntry{
 		Commit: model.Commit{SHA: "aaa111", Message: "first", Date: "2024-01-01T00:00:00Z"},
 		Date:   1704067200000,
+		Params: model.RunParams{CPU: "cpu1", GOOS: "linux", GOARCH: "amd64", GoVersion: "go1.22.0"},
 		Benchmarks: []model.BenchmarkResult{
 			{Name: "BenchFoo", Value: 100, Unit: "ns/op"},
 		},
@@ -235,6 +258,7 @@ func TestAppendEntry(t *testing.T) {
 	entry2 := model.BenchmarkEntry{
 		Commit: model.Commit{SHA: "bbb222", Message: "second", Date: "2024-01-02T00:00:00Z"},
 		Date:   1704153600000,
+		Params: model.RunParams{CPU: "cpu1", GOOS: "linux", GOARCH: "amd64", GoVersion: "go1.22.0"},
 		Benchmarks: []model.BenchmarkResult{
 			{Name: "BenchFoo", Value: 90, Unit: "ns/op"},
 		},
@@ -285,7 +309,8 @@ func TestAppendEntry_MaxItems(t *testing.T) {
 				SHA:  string(rune('a'+i)) + "00",
 				Date: "2024-01-0" + string(rune('1'+i)) + "T00:00:00Z",
 			},
-			Date: int64(i * 1000),
+			Date:   int64(i * 1000),
+			Params: model.RunParams{CPU: "cpu1", GOOS: "linux", GOARCH: "amd64"},
 			Benchmarks: []model.BenchmarkResult{
 				{Name: "Bench", Value: float64(i * 100), Unit: "ns/op"},
 			},
@@ -322,11 +347,13 @@ func TestAppendEntry_MultipleBranches(t *testing.T) {
 	entryA := model.BenchmarkEntry{
 		Commit:     model.Commit{SHA: "aaa", Date: "2024-01-01T00:00:00Z"},
 		Date:       1704067200000,
+		Params:     model.RunParams{CPU: "cpu1", GOOS: "linux", GOARCH: "amd64"},
 		Benchmarks: []model.BenchmarkResult{{Name: "B", Value: 1, Unit: "ns/op"}},
 	}
 	entryB := model.BenchmarkEntry{
 		Commit:     model.Commit{SHA: "bbb", Date: "2024-01-02T00:00:00Z"},
 		Date:       1704153600000,
+		Params:     model.RunParams{CPU: "cpu1", GOOS: "linux", GOARCH: "amd64"},
 		Benchmarks: []model.BenchmarkResult{{Name: "B", Value: 2, Unit: "ns/op"}},
 	}
 
@@ -372,6 +399,7 @@ func TestBranchDataPath_Sanitization(t *testing.T) {
 	entry := model.BenchmarkEntry{
 		Commit:     model.Commit{SHA: "ccc", Date: "2024-01-01T00:00:00Z"},
 		Date:       1704067200000,
+		Params:     model.RunParams{CPU: "cpu1", GOOS: "linux", GOARCH: "amd64"},
 		Benchmarks: []model.BenchmarkResult{{Name: "B", Value: 1, Unit: "ns/op"}},
 	}
 
@@ -472,6 +500,13 @@ func TestBranchData_JSONRoundTrip(t *testing.T) {
 				URL:     "https://github.com/test/repo/commit/deadbeef",
 			},
 			Date: 1718445600000,
+			Params: model.RunParams{
+				CPU:       "Intel Xeon",
+				GOOS:      "linux",
+				GOARCH:    "amd64",
+				GoVersion: "go1.22.0",
+				CGO:       true,
+			},
 			Benchmarks: []model.BenchmarkResult{
 				{Name: "BenchmarkA", Value: 1234.567, Unit: "ns/op", Extra: "100 times\n4 procs"},
 				{Name: "BenchmarkA - B/op", Value: 256, Unit: "B/op", Extra: "100 times\n4 procs"},
@@ -505,6 +540,9 @@ func TestBranchData_JSONRoundTrip(t *testing.T) {
 	if got.Date != want.Date {
 		t.Errorf("Date: got %d, want %d", got.Date, want.Date)
 	}
+	if got.Params != want.Params {
+		t.Errorf("Params: got %+v, want %+v", got.Params, want.Params)
+	}
 	if len(got.Benchmarks) != len(want.Benchmarks) {
 		t.Fatalf("Benchmarks length: got %d, want %d", len(got.Benchmarks), len(want.Benchmarks))
 	}
@@ -535,23 +573,29 @@ func TestAppendEntry_ReplacesExistingWithSameKey(t *testing.T) {
 		t.Fatalf("New() error: %v", err)
 	}
 
-	// First entry for commit abc with CPU "Intel Xeon" and CGO true.
+	params := model.RunParams{
+		CPU:       "Intel Xeon",
+		GOOS:      "linux",
+		GOARCH:    "amd64",
+		GoVersion: "go1.22.0",
+		CGO:       true,
+	}
+
+	// First entry for commit abc with identical params.
 	entry1 := model.BenchmarkEntry{
 		Commit: model.Commit{SHA: "abc123", Message: "first run", Date: "2024-01-01T00:00:00Z"},
 		Date:   1704067200000,
-		CPU:    "Intel Xeon",
-		CGO:    true,
+		Params: params,
 		Benchmarks: []model.BenchmarkResult{
 			{Name: "BenchFoo", Value: 100, Unit: "ns/op"},
 		},
 	}
 
-	// Second entry for the SAME commit+cpu+cgo — should replace.
+	// Second entry for the SAME commit+params — should replace.
 	entry2 := model.BenchmarkEntry{
 		Commit: model.Commit{SHA: "abc123", Message: "re-run", Date: "2024-01-01T00:00:00Z"},
 		Date:   1704067200000,
-		CPU:    "Intel Xeon",
-		CGO:    true,
+		Params: params,
 		Benchmarks: []model.BenchmarkResult{
 			{Name: "BenchFoo", Value: 42, Unit: "ns/op"},
 		},
@@ -590,8 +634,7 @@ func TestAppendEntry_DifferentCPU_NoReplace(t *testing.T) {
 	entry1 := model.BenchmarkEntry{
 		Commit: model.Commit{SHA: "abc123", Date: "2024-01-01T00:00:00Z"},
 		Date:   1704067200000,
-		CPU:    "Intel Xeon",
-		CGO:    true,
+		Params: model.RunParams{CPU: "Intel Xeon", GOOS: "linux", GOARCH: "amd64", GoVersion: "go1.22.0", CGO: true},
 		Benchmarks: []model.BenchmarkResult{
 			{Name: "BenchFoo", Value: 100, Unit: "ns/op"},
 		},
@@ -600,8 +643,7 @@ func TestAppendEntry_DifferentCPU_NoReplace(t *testing.T) {
 	entry2 := model.BenchmarkEntry{
 		Commit: model.Commit{SHA: "abc123", Date: "2024-01-01T00:00:00Z"},
 		Date:   1704067200000,
-		CPU:    "AMD Ryzen",
-		CGO:    true,
+		Params: model.RunParams{CPU: "AMD Ryzen", GOOS: "linux", GOARCH: "amd64", GoVersion: "go1.22.0", CGO: true},
 		Benchmarks: []model.BenchmarkResult{
 			{Name: "BenchFoo", Value: 80, Unit: "ns/op"},
 		},
@@ -634,8 +676,7 @@ func TestAppendEntry_DifferentCGO_NoReplace(t *testing.T) {
 	entry1 := model.BenchmarkEntry{
 		Commit: model.Commit{SHA: "abc123", Date: "2024-01-01T00:00:00Z"},
 		Date:   1704067200000,
-		CPU:    "Intel Xeon",
-		CGO:    true,
+		Params: model.RunParams{CPU: "Intel Xeon", GOOS: "linux", GOARCH: "amd64", GoVersion: "go1.22.0", CGO: true},
 		Benchmarks: []model.BenchmarkResult{
 			{Name: "BenchFoo", Value: 100, Unit: "ns/op"},
 		},
@@ -644,8 +685,7 @@ func TestAppendEntry_DifferentCGO_NoReplace(t *testing.T) {
 	entry2 := model.BenchmarkEntry{
 		Commit: model.Commit{SHA: "abc123", Date: "2024-01-01T00:00:00Z"},
 		Date:   1704067200000,
-		CPU:    "Intel Xeon",
-		CGO:    false,
+		Params: model.RunParams{CPU: "Intel Xeon", GOOS: "linux", GOARCH: "amd64", GoVersion: "go1.22.0", CGO: false},
 		Benchmarks: []model.BenchmarkResult{
 			{Name: "BenchFoo", Value: 120, Unit: "ns/op"},
 		},
@@ -668,7 +708,7 @@ func TestAppendEntry_DifferentCGO_NoReplace(t *testing.T) {
 	}
 }
 
-func TestAppendEntry_DifferentCommit_NoReplace(t *testing.T) {
+func TestAppendEntry_DifferentGOOS_NoReplace(t *testing.T) {
 	dir := t.TempDir()
 	s, err := New(dir)
 	if err != nil {
@@ -678,8 +718,135 @@ func TestAppendEntry_DifferentCommit_NoReplace(t *testing.T) {
 	entry1 := model.BenchmarkEntry{
 		Commit: model.Commit{SHA: "abc123", Date: "2024-01-01T00:00:00Z"},
 		Date:   1704067200000,
-		CPU:    "Intel Xeon",
-		CGO:    true,
+		Params: model.RunParams{CPU: "Intel Xeon", GOOS: "linux", GOARCH: "amd64", GoVersion: "go1.22.0", CGO: true},
+		Benchmarks: []model.BenchmarkResult{
+			{Name: "BenchFoo", Value: 100, Unit: "ns/op"},
+		},
+	}
+
+	entry2 := model.BenchmarkEntry{
+		Commit: model.Commit{SHA: "abc123", Date: "2024-01-01T00:00:00Z"},
+		Date:   1704067200000,
+		Params: model.RunParams{CPU: "Intel Xeon", GOOS: "darwin", GOARCH: "amd64", GoVersion: "go1.22.0", CGO: true},
+		Benchmarks: []model.BenchmarkResult{
+			{Name: "BenchFoo", Value: 110, Unit: "ns/op"},
+		},
+	}
+
+	if err := s.AppendEntry("main", entry1, 0); err != nil {
+		t.Fatalf("AppendEntry(1) error: %v", err)
+	}
+	if err := s.AppendEntry("main", entry2, 0); err != nil {
+		t.Fatalf("AppendEntry(2) error: %v", err)
+	}
+
+	data, err := s.ReadBranchData("main")
+	if err != nil {
+		t.Fatalf("ReadBranchData() error: %v", err)
+	}
+
+	if len(data) != 2 {
+		t.Fatalf("expected 2 entries (different GOOS), got %d", len(data))
+	}
+}
+
+func TestAppendEntry_DifferentGOARCH_NoReplace(t *testing.T) {
+	dir := t.TempDir()
+	s, err := New(dir)
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	entry1 := model.BenchmarkEntry{
+		Commit: model.Commit{SHA: "abc123", Date: "2024-01-01T00:00:00Z"},
+		Date:   1704067200000,
+		Params: model.RunParams{CPU: "Intel Xeon", GOOS: "linux", GOARCH: "amd64", GoVersion: "go1.22.0", CGO: true},
+		Benchmarks: []model.BenchmarkResult{
+			{Name: "BenchFoo", Value: 100, Unit: "ns/op"},
+		},
+	}
+
+	entry2 := model.BenchmarkEntry{
+		Commit: model.Commit{SHA: "abc123", Date: "2024-01-01T00:00:00Z"},
+		Date:   1704067200000,
+		Params: model.RunParams{CPU: "Intel Xeon", GOOS: "linux", GOARCH: "arm64", GoVersion: "go1.22.0", CGO: true},
+		Benchmarks: []model.BenchmarkResult{
+			{Name: "BenchFoo", Value: 130, Unit: "ns/op"},
+		},
+	}
+
+	if err := s.AppendEntry("main", entry1, 0); err != nil {
+		t.Fatalf("AppendEntry(1) error: %v", err)
+	}
+	if err := s.AppendEntry("main", entry2, 0); err != nil {
+		t.Fatalf("AppendEntry(2) error: %v", err)
+	}
+
+	data, err := s.ReadBranchData("main")
+	if err != nil {
+		t.Fatalf("ReadBranchData() error: %v", err)
+	}
+
+	if len(data) != 2 {
+		t.Fatalf("expected 2 entries (different GOARCH), got %d", len(data))
+	}
+}
+
+func TestAppendEntry_DifferentGoVersion_NoReplace(t *testing.T) {
+	dir := t.TempDir()
+	s, err := New(dir)
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	entry1 := model.BenchmarkEntry{
+		Commit: model.Commit{SHA: "abc123", Date: "2024-01-01T00:00:00Z"},
+		Date:   1704067200000,
+		Params: model.RunParams{CPU: "Intel Xeon", GOOS: "linux", GOARCH: "amd64", GoVersion: "go1.21.0", CGO: true},
+		Benchmarks: []model.BenchmarkResult{
+			{Name: "BenchFoo", Value: 100, Unit: "ns/op"},
+		},
+	}
+
+	entry2 := model.BenchmarkEntry{
+		Commit: model.Commit{SHA: "abc123", Date: "2024-01-01T00:00:00Z"},
+		Date:   1704067200000,
+		Params: model.RunParams{CPU: "Intel Xeon", GOOS: "linux", GOARCH: "amd64", GoVersion: "go1.22.0", CGO: true},
+		Benchmarks: []model.BenchmarkResult{
+			{Name: "BenchFoo", Value: 95, Unit: "ns/op"},
+		},
+	}
+
+	if err := s.AppendEntry("main", entry1, 0); err != nil {
+		t.Fatalf("AppendEntry(1) error: %v", err)
+	}
+	if err := s.AppendEntry("main", entry2, 0); err != nil {
+		t.Fatalf("AppendEntry(2) error: %v", err)
+	}
+
+	data, err := s.ReadBranchData("main")
+	if err != nil {
+		t.Fatalf("ReadBranchData() error: %v", err)
+	}
+
+	if len(data) != 2 {
+		t.Fatalf("expected 2 entries (different GoVersion), got %d", len(data))
+	}
+}
+
+func TestAppendEntry_DifferentCommit_NoReplace(t *testing.T) {
+	dir := t.TempDir()
+	s, err := New(dir)
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	params := model.RunParams{CPU: "Intel Xeon", GOOS: "linux", GOARCH: "amd64", GoVersion: "go1.22.0", CGO: true}
+
+	entry1 := model.BenchmarkEntry{
+		Commit: model.Commit{SHA: "abc123", Date: "2024-01-01T00:00:00Z"},
+		Date:   1704067200000,
+		Params: params,
 		Benchmarks: []model.BenchmarkResult{
 			{Name: "BenchFoo", Value: 100, Unit: "ns/op"},
 		},
@@ -688,8 +855,7 @@ func TestAppendEntry_DifferentCommit_NoReplace(t *testing.T) {
 	entry2 := model.BenchmarkEntry{
 		Commit: model.Commit{SHA: "def456", Date: "2024-01-02T00:00:00Z"},
 		Date:   1704153600000,
-		CPU:    "Intel Xeon",
-		CGO:    true,
+		Params: params,
 		Benchmarks: []model.BenchmarkResult{
 			{Name: "BenchFoo", Value: 90, Unit: "ns/op"},
 		},
@@ -719,20 +885,20 @@ func TestAppendEntries_BatchReplace(t *testing.T) {
 		t.Fatalf("New() error: %v", err)
 	}
 
+	params := model.RunParams{CPU: "cpu1", GOOS: "linux", GOARCH: "amd64", GoVersion: "go1.22.0", CGO: true}
+
 	// Seed with initial entries.
 	initial := []model.BenchmarkEntry{
 		{
 			Commit:     model.Commit{SHA: "aaa", Date: "2024-01-01T00:00:00Z"},
 			Date:       1704067200000,
-			CPU:        "cpu1",
-			CGO:        true,
+			Params:     params,
 			Benchmarks: []model.BenchmarkResult{{Name: "B", Value: 1, Unit: "ns/op"}},
 		},
 		{
 			Commit:     model.Commit{SHA: "bbb", Date: "2024-01-02T00:00:00Z"},
 			Date:       1704153600000,
-			CPU:        "cpu1",
-			CGO:        true,
+			Params:     params,
 			Benchmarks: []model.BenchmarkResult{{Name: "B", Value: 2, Unit: "ns/op"}},
 		},
 	}
@@ -745,15 +911,13 @@ func TestAppendEntries_BatchReplace(t *testing.T) {
 		{
 			Commit:     model.Commit{SHA: "aaa", Date: "2024-01-01T00:00:00Z"},
 			Date:       1704067200000,
-			CPU:        "cpu1",
-			CGO:        true,
+			Params:     params,
 			Benchmarks: []model.BenchmarkResult{{Name: "B", Value: 999, Unit: "ns/op"}},
 		},
 		{
 			Commit:     model.Commit{SHA: "ccc", Date: "2024-01-03T00:00:00Z"},
 			Date:       1704240000000,
-			CPU:        "cpu1",
-			CGO:        true,
+			Params:     params,
 			Benchmarks: []model.BenchmarkResult{{Name: "B", Value: 3, Unit: "ns/op"}},
 		},
 	}
@@ -803,27 +967,26 @@ func TestAppendEntry_SortedByCommitDate(t *testing.T) {
 		t.Fatalf("New() error: %v", err)
 	}
 
+	params := model.RunParams{CPU: "cpu1", GOOS: "linux", GOARCH: "amd64", GoVersion: "go1.22.0", CGO: true}
+
 	// Insert entries out of chronological order.
 	entries := []model.BenchmarkEntry{
 		{
 			Commit:     model.Commit{SHA: "ccc", Date: "2024-01-03T00:00:00Z"},
 			Date:       1704240000000,
-			CPU:        "cpu1",
-			CGO:        true,
+			Params:     params,
 			Benchmarks: []model.BenchmarkResult{{Name: "B", Value: 3, Unit: "ns/op"}},
 		},
 		{
 			Commit:     model.Commit{SHA: "aaa", Date: "2024-01-01T00:00:00Z"},
 			Date:       1704067200000,
-			CPU:        "cpu1",
-			CGO:        true,
+			Params:     params,
 			Benchmarks: []model.BenchmarkResult{{Name: "B", Value: 1, Unit: "ns/op"}},
 		},
 		{
 			Commit:     model.Commit{SHA: "bbb", Date: "2024-01-02T00:00:00Z"},
 			Date:       1704153600000,
-			CPU:        "cpu1",
-			CGO:        true,
+			Params:     params,
 			Benchmarks: []model.BenchmarkResult{{Name: "B", Value: 2, Unit: "ns/op"}},
 		},
 	}
@@ -860,24 +1023,26 @@ func TestAppendEntry_SortedAfterReplace(t *testing.T) {
 		t.Fatalf("New() error: %v", err)
 	}
 
+	params := model.RunParams{CPU: "cpu1", GOOS: "linux", GOARCH: "amd64"}
+
 	// Insert in correct order initially.
 	for _, e := range []model.BenchmarkEntry{
 		{
 			Commit:     model.Commit{SHA: "aaa", Date: "2024-01-01T00:00:00Z"},
 			Date:       1704067200000,
-			CPU:        "cpu1",
+			Params:     params,
 			Benchmarks: []model.BenchmarkResult{{Name: "B", Value: 1, Unit: "ns/op"}},
 		},
 		{
 			Commit:     model.Commit{SHA: "bbb", Date: "2024-01-02T00:00:00Z"},
 			Date:       1704153600000,
-			CPU:        "cpu1",
+			Params:     params,
 			Benchmarks: []model.BenchmarkResult{{Name: "B", Value: 2, Unit: "ns/op"}},
 		},
 		{
 			Commit:     model.Commit{SHA: "ccc", Date: "2024-01-03T00:00:00Z"},
 			Date:       1704240000000,
-			CPU:        "cpu1",
+			Params:     params,
 			Benchmarks: []model.BenchmarkResult{{Name: "B", Value: 3, Unit: "ns/op"}},
 		},
 	} {
@@ -890,7 +1055,7 @@ func TestAppendEntry_SortedAfterReplace(t *testing.T) {
 	replacement := model.BenchmarkEntry{
 		Commit:     model.Commit{SHA: "bbb", Date: "2024-01-02T00:00:00Z"},
 		Date:       1704153600000,
-		CPU:        "cpu1",
+		Params:     params,
 		Benchmarks: []model.BenchmarkResult{{Name: "B", Value: 999, Unit: "ns/op"}},
 	}
 	if err := s.AppendEntry("main", replacement, 0); err != nil {
@@ -927,23 +1092,25 @@ func TestAppendEntry_SortedInsertionOutOfOrder(t *testing.T) {
 		t.Fatalf("New() error: %v", err)
 	}
 
+	params := model.RunParams{CPU: "cpu1", GOOS: "linux", GOARCH: "amd64"}
+
 	// Append entries one at a time, out of order, to simulate late-arriving data.
 	e3 := model.BenchmarkEntry{
 		Commit:     model.Commit{SHA: "ccc", Date: "2024-03-01T00:00:00Z"},
 		Date:       1709251200000,
-		CPU:        "cpu1",
+		Params:     params,
 		Benchmarks: []model.BenchmarkResult{{Name: "B", Value: 3, Unit: "ns/op"}},
 	}
 	e1 := model.BenchmarkEntry{
 		Commit:     model.Commit{SHA: "aaa", Date: "2024-01-01T00:00:00Z"},
 		Date:       1704067200000,
-		CPU:        "cpu1",
+		Params:     params,
 		Benchmarks: []model.BenchmarkResult{{Name: "B", Value: 1, Unit: "ns/op"}},
 	}
 	e2 := model.BenchmarkEntry{
 		Commit:     model.Commit{SHA: "bbb", Date: "2024-02-01T00:00:00Z"},
 		Date:       1706745600000,
-		CPU:        "cpu1",
+		Params:     params,
 		Benchmarks: []model.BenchmarkResult{{Name: "B", Value: 2, Unit: "ns/op"}},
 	}
 
@@ -977,12 +1144,14 @@ func TestAppendEntry_MaxItemsAfterReplace(t *testing.T) {
 		t.Fatalf("New() error: %v", err)
 	}
 
+	params := model.RunParams{CPU: "cpu1", GOOS: "linux", GOARCH: "amd64"}
+
 	// Seed with 3 entries.
 	for i, sha := range []string{"aaa", "bbb", "ccc"} {
 		e := model.BenchmarkEntry{
 			Commit:     model.Commit{SHA: sha, Date: "2024-01-0" + string(rune('1'+i)) + "T00:00:00Z"},
 			Date:       int64(1704067200000 + i*86400000),
-			CPU:        "cpu1",
+			Params:     params,
 			Benchmarks: []model.BenchmarkResult{{Name: "B", Value: float64(i + 1), Unit: "ns/op"}},
 		}
 		if err := s.AppendEntry("main", e, 0); err != nil {
@@ -994,7 +1163,7 @@ func TestAppendEntry_MaxItemsAfterReplace(t *testing.T) {
 	replacement := model.BenchmarkEntry{
 		Commit:     model.Commit{SHA: "bbb", Date: "2024-01-02T00:00:00Z"},
 		Date:       1704153600000,
-		CPU:        "cpu1",
+		Params:     params,
 		Benchmarks: []model.BenchmarkResult{{Name: "B", Value: 999, Unit: "ns/op"}},
 	}
 	if err := s.AppendEntry("main", replacement, 2); err != nil {
@@ -1026,32 +1195,45 @@ func TestAppendEntry_MaxItemsAfterReplace(t *testing.T) {
 func TestEntryKey(t *testing.T) {
 	e1 := model.BenchmarkEntry{
 		Commit: model.Commit{SHA: "abc123"},
-		CPU:    "Intel Xeon",
-		CGO:    true,
+		Params: model.RunParams{CPU: "Intel Xeon", GOOS: "linux", GOARCH: "amd64", GoVersion: "go1.22.0", CGO: true},
 	}
 	e2 := model.BenchmarkEntry{
 		Commit: model.Commit{SHA: "abc123"},
-		CPU:    "Intel Xeon",
-		CGO:    true,
+		Params: model.RunParams{CPU: "Intel Xeon", GOOS: "linux", GOARCH: "amd64", GoVersion: "go1.22.0", CGO: true},
 	}
+	// Different CPU
 	e3 := model.BenchmarkEntry{
 		Commit: model.Commit{SHA: "abc123"},
-		CPU:    "AMD Ryzen",
-		CGO:    true,
+		Params: model.RunParams{CPU: "AMD Ryzen", GOOS: "linux", GOARCH: "amd64", GoVersion: "go1.22.0", CGO: true},
 	}
+	// Different CGO
 	e4 := model.BenchmarkEntry{
 		Commit: model.Commit{SHA: "abc123"},
-		CPU:    "Intel Xeon",
-		CGO:    false,
+		Params: model.RunParams{CPU: "Intel Xeon", GOOS: "linux", GOARCH: "amd64", GoVersion: "go1.22.0", CGO: false},
 	}
+	// Different commit
 	e5 := model.BenchmarkEntry{
 		Commit: model.Commit{SHA: "def456"},
-		CPU:    "Intel Xeon",
-		CGO:    true,
+		Params: model.RunParams{CPU: "Intel Xeon", GOOS: "linux", GOARCH: "amd64", GoVersion: "go1.22.0", CGO: true},
+	}
+	// Different GOOS
+	e6 := model.BenchmarkEntry{
+		Commit: model.Commit{SHA: "abc123"},
+		Params: model.RunParams{CPU: "Intel Xeon", GOOS: "darwin", GOARCH: "amd64", GoVersion: "go1.22.0", CGO: true},
+	}
+	// Different GOARCH
+	e7 := model.BenchmarkEntry{
+		Commit: model.Commit{SHA: "abc123"},
+		Params: model.RunParams{CPU: "Intel Xeon", GOOS: "linux", GOARCH: "arm64", GoVersion: "go1.22.0", CGO: true},
+	}
+	// Different GoVersion
+	e8 := model.BenchmarkEntry{
+		Commit: model.Commit{SHA: "abc123"},
+		Params: model.RunParams{CPU: "Intel Xeon", GOOS: "linux", GOARCH: "amd64", GoVersion: "go1.21.0", CGO: true},
 	}
 
 	if e1.EntryKey() != e2.EntryKey() {
-		t.Error("same commit+cpu+cgo should produce same key")
+		t.Error("same commit+params should produce same key")
 	}
 	if e1.EntryKey() == e3.EntryKey() {
 		t.Error("different CPU should produce different key")
@@ -1061,5 +1243,14 @@ func TestEntryKey(t *testing.T) {
 	}
 	if e1.EntryKey() == e5.EntryKey() {
 		t.Error("different commit should produce different key")
+	}
+	if e1.EntryKey() == e6.EntryKey() {
+		t.Error("different GOOS should produce different key")
+	}
+	if e1.EntryKey() == e7.EntryKey() {
+		t.Error("different GOARCH should produce different key")
+	}
+	if e1.EntryKey() == e8.EntryKey() {
+		t.Error("different GoVersion should produce different key")
 	}
 }

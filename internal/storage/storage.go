@@ -204,7 +204,7 @@ func (s *Storage) AppendEntries(branch string, newEntries []model.BenchmarkEntry
 	}
 
 	// Build a set of new entry keys for fast lookup.
-	newKeys := make(map[string]struct{}, len(newEntries))
+	newKeys := make(map[model.EntryKeyValue]struct{}, len(newEntries))
 	for _, e := range newEntries {
 		newKeys[e.EntryKey()] = struct{}{}
 	}

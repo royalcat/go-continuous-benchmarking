@@ -76,6 +76,7 @@ func runParse(args []string) {
 		commitURL    string
 		cpuModel     string
 		cgoFlag      string
+		goVersion    string
 		goModule     string
 		repoURL      string
 	)
@@ -89,6 +90,7 @@ func runParse(args []string) {
 	fs.StringVar(&commitURL, "commit-url", "", "URL to the commit")
 	fs.StringVar(&cpuModel, "cpu-model", "", "CPU model name (auto-detected if empty)")
 	fs.StringVar(&cgoFlag, "cgo", "", "CGO enabled: 'true', 'false', or '' (auto-detect)")
+	fs.StringVar(&goVersion, "go-version", "", "Go version string (auto-detected from runtime if empty)")
 	fs.StringVar(&goModule, "go-module", "", "Go module path to strip from package names (auto-detect if empty)")
 	fs.StringVar(&repoURL, "repo-url", "", "Repository URL (used for go-module fallback)")
 
@@ -114,6 +116,14 @@ func runParse(args []string) {
 
 	cgoEnabled := detectCGO(cgoFlag)
 	fmt.Printf("CGO enabled: %v\n", cgoEnabled)
+
+	goVer := goVersion
+	if goVer == "" {
+		goVer = runtime.Version()
+		fmt.Printf("Auto-detected Go version: %s\n", goVer)
+	} else {
+		fmt.Printf("Using provided Go version: %s\n", goVer)
+	}
 
 	goos := runtime.GOOS
 	goarch := runtime.GOARCH
@@ -179,11 +189,14 @@ func runParse(args []string) {
 			Date:    commitDate,
 			URL:     commitURL,
 		},
-		Date:       commitTime.UnixMilli(),
-		CPU:        cpu,
-		GOOS:       goos,
-		GOARCH:     goarch,
-		CGO:        cgoEnabled,
+		Date: commitTime.UnixMilli(),
+		Params: model.RunParams{
+			CPU:       cpu,
+			GOOS:      goos,
+			GOARCH:    goarch,
+			GoVersion: goVer,
+			CGO:       cgoEnabled,
+		},
 		Benchmarks: benchmarks,
 	}
 
@@ -269,8 +282,8 @@ func runStore(args []string) {
 		if err != nil {
 			log.Fatalf("Error loading entry from %s: %v", path, err)
 		}
-		fmt.Printf("Loaded entry from %s: CPU=%s GOOS=%s GOARCH=%s CGO=%v benchmarks=%d\n",
-			path, entry.CPU, entry.GOOS, entry.GOARCH, entry.CGO, len(entry.Benchmarks))
+		fmt.Printf("Loaded entry from %s: CPU=%s GOOS=%s GOARCH=%s GoVersion=%s CGO=%v benchmarks=%d\n",
+			path, entry.Params.CPU, entry.Params.GOOS, entry.Params.GOARCH, entry.Params.GoVersion, entry.Params.CGO, len(entry.Benchmarks))
 		entries = append(entries, entry)
 	}
 

@@ -20,6 +20,12 @@
   const cpuSelect = document.getElementById("cpu-select");
   const cpuModelSelect = document.getElementById("cpu-model-select");
   const cpuModelGroup = document.getElementById("cpu-model-group");
+  const goosSelect = document.getElementById("goos-select");
+  const goosGroup = document.getElementById("goos-group");
+  const goarchSelect = document.getElementById("goarch-select");
+  const goarchGroup = document.getElementById("goarch-group");
+  const goversionSelect = document.getElementById("goversion-select");
+  const goversionGroup = document.getElementById("goversion-group");
   const cgoCheckbox = document.getElementById("cgo-checkbox");
   const cgoGroup = document.getElementById("cgo-group");
   const filterInput = document.getElementById("filter-input");
@@ -125,11 +131,57 @@
   function extractCPUModels(entries) {
     const models = new Set();
     for (const entry of entries) {
-      if (entry.cpu) {
-        models.add(entry.cpu);
+      var cpu = entry.params ? entry.params.cpu : entry.cpu;
+      if (cpu) {
+        models.add(cpu);
       }
     }
     return Array.from(models).sort();
+  }
+
+  /**
+   * Extract all unique GOOS values from data entries.
+   * Returns sorted array of strings.
+   */
+  function extractGOOSValues(entries) {
+    const values = new Set();
+    for (const entry of entries) {
+      var goos = entry.params ? entry.params.goos : entry.goos;
+      if (goos) {
+        values.add(goos);
+      }
+    }
+    return Array.from(values).sort();
+  }
+
+  /**
+   * Extract all unique GOARCH values from data entries.
+   * Returns sorted array of strings.
+   */
+  function extractGOARCHValues(entries) {
+    const values = new Set();
+    for (const entry of entries) {
+      var goarch = entry.params ? entry.params.goarch : entry.goarch;
+      if (goarch) {
+        values.add(goarch);
+      }
+    }
+    return Array.from(values).sort();
+  }
+
+  /**
+   * Extract all unique Go version strings from data entries.
+   * Returns sorted array of strings.
+   */
+  function extractGoVersions(entries) {
+    const values = new Set();
+    for (const entry of entries) {
+      var goVersion = entry.params ? entry.params.goVersion : "";
+      if (goVersion) {
+        values.add(goVersion);
+      }
+    }
+    return Array.from(values).sort();
   }
 
   /**
@@ -139,7 +191,8 @@
   function extractCGOValues(entries) {
     const values = new Set();
     for (const entry of entries) {
-      values.add(!!entry.cgo);
+      var cgo = entry.params ? entry.params.cgo : entry.cgo;
+      values.add(!!cgo);
     }
     return values;
   }
@@ -170,21 +223,44 @@
     filterPkg,
     filterCPU,
     filterCPUModel,
+    filterGOOS,
+    filterGOARCH,
+    filterGoVersion,
     filterCGO,
   ) {
     const map = new Map();
     for (const entry of entries) {
       var commit = entry.commit;
       var date = entry.date;
-      var entryCPU = entry.cpu || "";
+      var params = entry.params || {};
+      var entryCPU = params.cpu || entry.cpu || "";
 
       // Filter by CPU model at entry level
       if (filterCPUModel !== null && entryCPU !== filterCPUModel) {
         continue;
       }
 
+      // Filter by GOOS at entry level
+      var entryGOOS = params.goos || entry.goos || "";
+      if (filterGOOS !== null && entryGOOS !== filterGOOS) {
+        continue;
+      }
+
+      // Filter by GOARCH at entry level
+      var entryGOARCH = params.goarch || entry.goarch || "";
+      if (filterGOARCH !== null && entryGOARCH !== filterGOARCH) {
+        continue;
+      }
+
+      // Filter by Go version at entry level
+      var entryGoVersion = params.goVersion || "";
+      if (filterGoVersion !== null && entryGoVersion !== filterGoVersion) {
+        continue;
+      }
+
       // Filter by CGO status at entry level
-      if (filterCGO !== null && !!entry.cgo !== filterCGO) {
+      var entryCGO = entry.params ? params.cgo : entry.cgo;
+      if (filterCGO !== null && !!entryCGO !== filterCGO) {
         continue;
       }
 
@@ -203,6 +279,7 @@
           date: date,
           bench: bench,
           cpu: entryCPU,
+          params: params,
         };
         var arr = map.get(bench.name);
         if (!arr) {
@@ -385,6 +462,16 @@
                 if (d.cpu) {
                   lines.push("CPU: " + d.cpu);
                 }
+                if (d.params.goos) {
+                  lines.push("GOOS: " + d.params.goos);
+                }
+                if (d.params.goarch) {
+                  lines.push("GOARCH: " + d.params.goarch);
+                }
+                if (d.params.goVersion) {
+                  lines.push("Go: " + d.params.goVersion);
+                }
+                lines.push("CGO: " + !!d.params.cgo);
                 if (d.commit.date) {
                   lines.push("Date: " + formatDate(d.commit.date));
                 }
@@ -440,6 +527,24 @@
       filterCPUModel = cpuModelVal;
     }
 
+    var filterGOOS = null;
+    var goosVal = goosSelect.value;
+    if (goosVal) {
+      filterGOOS = goosVal;
+    }
+
+    var filterGOARCH = null;
+    var goarchVal = goarchSelect.value;
+    if (goarchVal) {
+      filterGOARCH = goarchVal;
+    }
+
+    var filterGoVersion = null;
+    var goversionVal = goversionSelect.value;
+    if (goversionVal) {
+      filterGoVersion = goversionVal;
+    }
+
     // CGO filter: only apply when both values exist in data
     var filterCGO = null;
     var cgoValues = extractCGOValues(entries);
@@ -454,6 +559,9 @@
       filterPkg,
       filterCPU,
       filterCPUModel,
+      filterGOOS,
+      filterGOARCH,
+      filterGoVersion,
       filterCGO,
     );
 
@@ -467,9 +575,29 @@
       var latestCommitSHA = null;
       for (var ei = entries.length - 1; ei >= 0; ei--) {
         var ent = entries[ei];
-        if (filterCPUModel !== null && (ent.cpu || "") !== filterCPUModel)
+        var entParams = ent.params || {};
+        if (
+          filterCPUModel !== null &&
+          (entParams.cpu || ent.cpu || "") !== filterCPUModel
+        )
           continue;
-        if (filterCGO !== null && !!ent.cgo !== filterCGO) continue;
+        if (
+          filterGOOS !== null &&
+          (entParams.goos || ent.goos || "") !== filterGOOS
+        )
+          continue;
+        if (
+          filterGOARCH !== null &&
+          (entParams.goarch || ent.goarch || "") !== filterGOARCH
+        )
+          continue;
+        if (
+          filterGoVersion !== null &&
+          (entParams.goVersion || "") !== filterGoVersion
+        )
+          continue;
+        var entCGO = ent.params ? entParams.cgo : ent.cgo;
+        if (filterCGO !== null && !!entCGO !== filterCGO) continue;
         var matched = false;
         for (var bi = 0; bi < ent.benchmarks.length; bi++) {
           var b = ent.benchmarks[bi];
@@ -488,9 +616,29 @@
         for (var ei2 = entries.length - 1; ei2 >= 0; ei2--) {
           var ent2 = entries[ei2];
           if (ent2.commit.sha !== latestCommitSHA) continue;
-          if (filterCPUModel !== null && (ent2.cpu || "") !== filterCPUModel)
+          var entParams2 = ent2.params || {};
+          if (
+            filterCPUModel !== null &&
+            (entParams2.cpu || ent2.cpu || "") !== filterCPUModel
+          )
             continue;
-          if (filterCGO !== null && !!ent2.cgo !== filterCGO) continue;
+          if (
+            filterGOOS !== null &&
+            (entParams2.goos || ent2.goos || "") !== filterGOOS
+          )
+            continue;
+          if (
+            filterGOARCH !== null &&
+            (entParams2.goarch || ent2.goarch || "") !== filterGOARCH
+          )
+            continue;
+          if (
+            filterGoVersion !== null &&
+            (entParams2.goVersion || "") !== filterGoVersion
+          )
+            continue;
+          var entCGO2 = ent2.params ? entParams2.cgo : ent2.cgo;
+          if (filterCGO !== null && !!entCGO2 !== filterCGO) continue;
           for (var bi2 = 0; bi2 < ent2.benchmarks.length; bi2++) {
             var b2 = ent2.benchmarks[bi2];
             if (filterPkg !== null && b2.package !== filterPkg) continue;
@@ -689,8 +837,8 @@
       cpuModelSelect.appendChild(opt);
     }
 
-    // Hide the selector entirely when no CPU info exists in the data
-    if (models.length === 0) {
+    // Hide the selector when there are 0 or 1 CPU models (no choice to make)
+    if (models.length <= 1) {
       cpuModelGroup.style.display = "none";
     } else {
       cpuModelGroup.style.display = "flex";
@@ -703,6 +851,105 @@
   }
 
   cpuModelSelect.addEventListener("change", function () {
+    if (currentBranchData) {
+      renderBranch(currentBranchData);
+    }
+  });
+
+  // ---- GOOS selector ----
+
+  function populateGOOSSelector(entries) {
+    var values = extractGOOSValues(entries);
+    var currentVal = goosSelect.value;
+
+    goosSelect.innerHTML = "";
+
+    for (var i = 0; i < values.length; i++) {
+      var opt = document.createElement("option");
+      opt.value = values[i];
+      opt.textContent = values[i];
+      goosSelect.appendChild(opt);
+    }
+
+    if (values.length <= 1) {
+      goosGroup.style.display = "none";
+    } else {
+      goosGroup.style.display = "flex";
+      if (currentVal && values.indexOf(currentVal) >= 0) {
+        goosSelect.value = currentVal;
+      } else {
+        goosSelect.value = values[0];
+      }
+    }
+  }
+
+  goosSelect.addEventListener("change", function () {
+    if (currentBranchData) {
+      renderBranch(currentBranchData);
+    }
+  });
+
+  // ---- GOARCH selector ----
+
+  function populateGOARCHSelector(entries) {
+    var values = extractGOARCHValues(entries);
+    var currentVal = goarchSelect.value;
+
+    goarchSelect.innerHTML = "";
+
+    for (var i = 0; i < values.length; i++) {
+      var opt = document.createElement("option");
+      opt.value = values[i];
+      opt.textContent = values[i];
+      goarchSelect.appendChild(opt);
+    }
+
+    if (values.length <= 1) {
+      goarchGroup.style.display = "none";
+    } else {
+      goarchGroup.style.display = "flex";
+      if (currentVal && values.indexOf(currentVal) >= 0) {
+        goarchSelect.value = currentVal;
+      } else {
+        goarchSelect.value = values[0];
+      }
+    }
+  }
+
+  goarchSelect.addEventListener("change", function () {
+    if (currentBranchData) {
+      renderBranch(currentBranchData);
+    }
+  });
+
+  // ---- Go Version selector ----
+
+  function populateGoVersionSelector(entries) {
+    var values = extractGoVersions(entries);
+    var currentVal = goversionSelect.value;
+
+    goversionSelect.innerHTML = "";
+
+    for (var i = 0; i < values.length; i++) {
+      var opt = document.createElement("option");
+      opt.value = values[i];
+      opt.textContent = values[i];
+      goversionSelect.appendChild(opt);
+    }
+
+    if (values.length <= 1) {
+      goversionGroup.style.display = "none";
+    } else {
+      goversionGroup.style.display = "flex";
+      if (currentVal && values.indexOf(currentVal) >= 0) {
+        goversionSelect.value = currentVal;
+      } else {
+        goversionSelect.value = values[0];
+      }
+    }
+  }
+
+  goversionSelect.addEventListener("change", function () {
     if (currentBranchData) {
       renderBranch(currentBranchData);
     }
@@ -785,6 +1032,9 @@
       // Populate CPU selectors and CGO checkbox from data
       populateCPUSelector(currentBranchData);
       populateCPUModelSelector(currentBranchData);
+      populateGOOSSelector(currentBranchData);
+      populateGOARCHSelector(currentBranchData);
+      populateGoVersionSelector(currentBranchData);
       populateCGOCheckbox(currentBranchData);
 
       // Extract and render package tabs

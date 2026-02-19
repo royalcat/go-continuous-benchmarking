@@ -25,7 +25,14 @@ func makeEntry(sha string, nBenchmarks int) model.BenchmarkEntry {
 			Date:    "2024-06-15T10:00:00Z",
 			URL:     "https://github.com/test/repo/commit/" + sha,
 		},
-		Date:       1718445600000,
+		Date: 1718445600000,
+		Params: model.RunParams{
+			CPU:       "Intel Xeon",
+			GOOS:      "linux",
+			GOARCH:    "amd64",
+			GoVersion: "go1.22.0",
+			CGO:       true,
+		},
 		Benchmarks: benches,
 	}
 }

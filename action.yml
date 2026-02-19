@@ -39,6 +39,11 @@ inputs:
     required: false
     default: ""
 
+  go-version:
+    description: "[parse] Go version string to record (e.g. 'go1.22.0'). If empty, auto-detected from the Go runtime used to build the tool."
+    required: false
+    default: ""
+
   go-module:
     description: "Go module path to strip from package names in the dashboard. If empty, auto-detected from go.mod or derived from repo URL."
     required: false
@@ -210,6 +215,11 @@ runs:
           CGO_FLAG="-cgo=${{ inputs.cgo-enabled }}"
         fi
 
+        GO_VERSION_FLAG=""
+        if [ -n "${{ inputs.go-version }}" ]; then
+          GO_VERSION_FLAG="-go-version=${{ inputs.go-version }}"
+        fi
+
         GO_MODULE_FLAG=""
         if [ -n "${{ inputs.go-module }}" ]; then
           GO_MODULE_FLAG="-go-module=${{ inputs.go-module }}"
@@ -226,6 +236,7 @@ runs:
           -repo-url="${{ steps.resolve.outputs.repo-url }}" \
           ${CPU_FLAG} \
           ${CGO_FLAG} \
+          ${GO_VERSION_FLAG} \
           ${GO_MODULE_FLAG}
 
         echo "result-dir=${RESULT_DIR}" >> "$GITHUB_OUTPUT"
