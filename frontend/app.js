@@ -505,9 +505,6 @@
       // Charts container (grid)
       var chartsEl = document.createElement("div");
       chartsEl.className = "bench-group-charts";
-      if (group.benchNames.length === 1) {
-        chartsEl.classList.add("single-chart");
-      }
       groupEl.appendChild(chartsEl);
 
       for (var ci = 0; ci < group.benchNames.length; ci++) {

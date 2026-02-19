@@ -53,9 +53,9 @@
       }
 
       body {
-        max-width: 1400px;
+        max-width: 1920px;
         margin: 0 auto;
-        padding: 16px 24px;
+        padding: 16px 40px;
       }
 
       a {
@@ -189,7 +189,7 @@
 
       .bench-group-charts {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+        grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
         gap: 16px;
       }
 
@@ -207,11 +207,6 @@
         margin-bottom: 12px;
         word-break: break-word;
         color: var(--color-text-secondary);
-      }
-
-      /* When there's only 1 chart in a group, let it be full width */
-      .bench-group-charts.single-chart {
-        grid-template-columns: 1fr;
       }
 
       .chart-wrapper {
