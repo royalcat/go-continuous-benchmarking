@@ -17518,5 +17518,563 @@
         "procs": 4
       }
     ]
+  },
+  {
+    "commit": {
+      "sha": "f303986d5f83146bdca47f208978c77efb99ec28",
+      "message": "improve graphs",
+      "author": "royalcat",
+      "date": "2026-02-19T06:50:01+04:00",
+      "url": "https://github.com/royalcat/go-continuous-benchmarking/commit/f303986d5f83146bdca47f208978c77efb99ec28"
+    },
+    "date": 1771469467506,
+    "cpu": "AMD EPYC 7763 64-Core Processor",
+    "cgo": false,
+    "benchmarks": [
+      {
+        "name": "BenchmarkParse_SingleLine",
+        "value": 2462,
+        "unit": "ns/op",
+        "extra": "93768 times\n4 procs",
+        "package": "github.com/royalcat/go-continuous-benchmarking/internal/parse",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkParse_SingleLine - B/op",
+        "value": 4658,
+        "unit": "B/op",
+        "extra": "93768 times\n4 procs",
+        "package": "github.com/royalcat/go-continuous-benchmarking/internal/parse",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkParse_SingleLine - allocs/op",
+        "value": 14,
+        "unit": "allocs/op",
+        "extra": "93768 times\n4 procs",
+        "package": "github.com/royalcat/go-continuous-benchmarking/internal/parse",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkParse_SingleLineMultiMetric",
+        "value": 3217,
+        "unit": "ns/op",
+        "extra": "78392 times\n4 procs",
+        "package": "github.com/royalcat/go-continuous-benchmarking/internal/parse",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkParse_SingleLineMultiMetric - B/op",
+        "value": 5336,
+        "unit": "B/op",
+        "extra": "78392 times\n4 procs",
+        "package": "github.com/royalcat/go-continuous-benchmarking/internal/parse",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkParse_SingleLineMultiMetric - allocs/op",
+        "value": 18,
+        "unit": "allocs/op",
+        "extra": "78392 times\n4 procs",
+        "package": "github.com/royalcat/go-continuous-benchmarking/internal/parse",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkParse_10Lines",
+        "value": 23470,
+        "unit": "ns/op",
+        "extra": "10000 times\n4 procs",
+        "package": "github.com/royalcat/go-continuous-benchmarking/internal/parse",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkParse_10Lines - B/op",
+        "value": 15759,
+        "unit": "B/op",
+        "extra": "10000 times\n4 procs",
+        "package": "github.com/royalcat/go-continuous-benchmarking/internal/parse",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkParse_10Lines - allocs/op",
+        "value": 110,
+        "unit": "allocs/op",
+        "extra": "10000 times\n4 procs",
+        "package": "github.com/royalcat/go-continuous-benchmarking/internal/parse",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkParse_100Lines",
+        "value": 174466,
+        "unit": "ns/op",
+        "extra": "1300 times\n4 procs",
+        "package": "github.com/royalcat/go-continuous-benchmarking/internal/parse",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkParse_100Lines - B/op",
+        "value": 109454,
+        "unit": "B/op",
+        "extra": "1300 times\n4 procs",
+        "package": "github.com/royalcat/go-continuous-benchmarking/internal/parse",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkParse_100Lines - allocs/op",
+        "value": 926,
+        "unit": "allocs/op",
+        "extra": "1300 times\n4 procs",
+        "package": "github.com/royalcat/go-continuous-benchmarking/internal/parse",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkParse_MultiPackage_10x10",
+        "value": 180169,
+        "unit": "ns/op",
+        "extra": "1322 times\n4 procs",
+        "package": "github.com/royalcat/go-continuous-benchmarking/internal/parse",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkParse_MultiPackage_10x10 - B/op",
+        "value": 110188,
+        "unit": "B/op",
+        "extra": "1322 times\n4 procs",
+        "package": "github.com/royalcat/go-continuous-benchmarking/internal/parse",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkParse_MultiPackage_10x10 - allocs/op",
+        "value": 944,
+        "unit": "allocs/op",
+        "extra": "1322 times\n4 procs",
+        "package": "github.com/royalcat/go-continuous-benchmarking/internal/parse",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkParse_SubBenchmarks",
+        "value": 447710,
+        "unit": "ns/op",
+        "extra": "537 times\n4 procs",
+        "package": "github.com/royalcat/go-continuous-benchmarking/internal/parse",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkParse_WithNoise",
+        "value": 103031,
+        "unit": "ns/op",
+        "extra": "2218 times\n4 procs",
+        "package": "github.com/royalcat/go-continuous-benchmarking/internal/parse",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkAppendEntry_EmptyStorage",
+        "value": 85376,
+        "unit": "ns/op",
+        "extra": "2509 times\n4 procs",
+        "package": "github.com/royalcat/go-continuous-benchmarking/internal/storage",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkAppendEntry_EmptyStorage - B/op",
+        "value": 3144,
+        "unit": "B/op",
+        "extra": "2509 times\n4 procs",
+        "package": "github.com/royalcat/go-continuous-benchmarking/internal/storage",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkAppendEntry_EmptyStorage - allocs/op",
+        "value": 24,
+        "unit": "allocs/op",
+        "extra": "2509 times\n4 procs",
+        "package": "github.com/royalcat/go-continuous-benchmarking/internal/storage",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkAppendEntry_Existing10",
+        "value": 333492,
+        "unit": "ns/op",
+        "extra": "696 times\n4 procs",
+        "package": "github.com/royalcat/go-continuous-benchmarking/internal/storage",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkAppendEntry_Existing10 - B/op",
+        "value": 60865,
+        "unit": "B/op",
+        "extra": "696 times\n4 procs",
+        "package": "github.com/royalcat/go-continuous-benchmarking/internal/storage",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkAppendEntry_Existing10 - allocs/op",
+        "value": 329,
+        "unit": "allocs/op",
+        "extra": "696 times\n4 procs",
+        "package": "github.com/royalcat/go-continuous-benchmarking/internal/storage",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkAppendEntry_Existing100",
+        "value": 2216538,
+        "unit": "ns/op",
+        "extra": "100 times\n4 procs",
+        "package": "github.com/royalcat/go-continuous-benchmarking/internal/storage",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkAppendEntry_Existing100 - B/op",
+        "value": 592962,
+        "unit": "B/op",
+        "extra": "100 times\n4 procs",
+        "package": "github.com/royalcat/go-continuous-benchmarking/internal/storage",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkAppendEntry_Existing100 - allocs/op",
+        "value": 2943,
+        "unit": "allocs/op",
+        "extra": "100 times\n4 procs",
+        "package": "github.com/royalcat/go-continuous-benchmarking/internal/storage",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkAppendEntry_WithMaxItems",
+        "value": 3485372,
+        "unit": "ns/op",
+        "extra": "64 times\n4 procs",
+        "package": "github.com/royalcat/go-continuous-benchmarking/internal/storage",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkAppendEntry_WithMaxItems - B/op",
+        "value": 904947,
+        "unit": "B/op",
+        "extra": "64 times\n4 procs",
+        "package": "github.com/royalcat/go-continuous-benchmarking/internal/storage",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkAppendEntry_WithMaxItems - allocs/op",
+        "value": 5845,
+        "unit": "allocs/op",
+        "extra": "64 times\n4 procs",
+        "package": "github.com/royalcat/go-continuous-benchmarking/internal/storage",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkReadBranchData_10",
+        "value": 142197,
+        "unit": "ns/op",
+        "extra": "1504 times\n4 procs",
+        "package": "github.com/royalcat/go-continuous-benchmarking/internal/storage",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkReadBranchData_10 - B/op",
+        "value": 34688,
+        "unit": "B/op",
+        "extra": "1504 times\n4 procs",
+        "package": "github.com/royalcat/go-continuous-benchmarking/internal/storage",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkReadBranchData_10 - allocs/op",
+        "value": 310,
+        "unit": "allocs/op",
+        "extra": "1504 times\n4 procs",
+        "package": "github.com/royalcat/go-continuous-benchmarking/internal/storage",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkReadBranchData_100",
+        "value": 1294341,
+        "unit": "ns/op",
+        "extra": "184 times\n4 procs",
+        "package": "github.com/royalcat/go-continuous-benchmarking/internal/storage",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkReadBranchData_100 - B/op",
+        "value": 340611,
+        "unit": "B/op",
+        "extra": "184 times\n4 procs",
+        "package": "github.com/royalcat/go-continuous-benchmarking/internal/storage",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkReadBranchData_100 - allocs/op",
+        "value": 2923,
+        "unit": "allocs/op",
+        "extra": "184 times\n4 procs",
+        "package": "github.com/royalcat/go-continuous-benchmarking/internal/storage",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkWriteBranchData_10",
+        "value": 163398,
+        "unit": "ns/op",
+        "extra": "1333 times\n4 procs",
+        "package": "github.com/royalcat/go-continuous-benchmarking/internal/storage",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkWriteBranchData_10 - B/op",
+        "value": 24942,
+        "unit": "B/op",
+        "extra": "1333 times\n4 procs",
+        "package": "github.com/royalcat/go-continuous-benchmarking/internal/storage",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkWriteBranchData_10 - allocs/op",
+        "value": 8,
+        "unit": "allocs/op",
+        "extra": "1333 times\n4 procs",
+        "package": "github.com/royalcat/go-continuous-benchmarking/internal/storage",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkWriteBranchData_100",
+        "value": 938065,
+        "unit": "ns/op",
+        "extra": "260 times\n4 procs",
+        "package": "github.com/royalcat/go-continuous-benchmarking/internal/storage",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkWriteBranchData_100 - B/op",
+        "value": 227589,
+        "unit": "B/op",
+        "extra": "260 times\n4 procs",
+        "package": "github.com/royalcat/go-continuous-benchmarking/internal/storage",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkWriteBranchData_100 - allocs/op",
+        "value": 8,
+        "unit": "allocs/op",
+        "extra": "260 times\n4 procs",
+        "package": "github.com/royalcat/go-continuous-benchmarking/internal/storage",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkEnsureBranch_New",
+        "value": 48366,
+        "unit": "ns/op",
+        "extra": "6073 times\n4 procs",
+        "package": "github.com/royalcat/go-continuous-benchmarking/internal/storage",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkEnsureBranch_New - B/op",
+        "value": 481,
+        "unit": "B/op",
+        "extra": "6073 times\n4 procs",
+        "package": "github.com/royalcat/go-continuous-benchmarking/internal/storage",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkEnsureBranch_New - allocs/op",
+        "value": 11,
+        "unit": "allocs/op",
+        "extra": "6073 times\n4 procs",
+        "package": "github.com/royalcat/go-continuous-benchmarking/internal/storage",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkEnsureBranch_Existing",
+        "value": 21383,
+        "unit": "ns/op",
+        "extra": "10000 times\n4 procs",
+        "package": "github.com/royalcat/go-continuous-benchmarking/internal/storage",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkEnsureBranch_Existing - B/op",
+        "value": 4472,
+        "unit": "B/op",
+        "extra": "10000 times\n4 procs",
+        "package": "github.com/royalcat/go-continuous-benchmarking/internal/storage",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkEnsureBranch_Existing - allocs/op",
+        "value": 66,
+        "unit": "allocs/op",
+        "extra": "10000 times\n4 procs",
+        "package": "github.com/royalcat/go-continuous-benchmarking/internal/storage",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkReadBranches_50",
+        "value": 21357,
+        "unit": "ns/op",
+        "extra": "10000 times\n4 procs",
+        "package": "github.com/royalcat/go-continuous-benchmarking/internal/storage",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkReadBranches_50 - B/op",
+        "value": 4472,
+        "unit": "B/op",
+        "extra": "10000 times\n4 procs",
+        "package": "github.com/royalcat/go-continuous-benchmarking/internal/storage",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkReadBranches_50 - allocs/op",
+        "value": 66,
+        "unit": "allocs/op",
+        "extra": "10000 times\n4 procs",
+        "package": "github.com/royalcat/go-continuous-benchmarking/internal/storage",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkWriteMetadata",
+        "value": 128911,
+        "unit": "ns/op",
+        "extra": "1639 times\n4 procs",
+        "package": "github.com/royalcat/go-continuous-benchmarking/internal/storage",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkWriteMetadata - B/op",
+        "value": 600,
+        "unit": "B/op",
+        "extra": "1639 times\n4 procs",
+        "package": "github.com/royalcat/go-continuous-benchmarking/internal/storage",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkWriteMetadata - allocs/op",
+        "value": 7,
+        "unit": "allocs/op",
+        "extra": "1639 times\n4 procs",
+        "package": "github.com/royalcat/go-continuous-benchmarking/internal/storage",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkReadMetadata",
+        "value": 12916,
+        "unit": "ns/op",
+        "extra": "18204 times\n4 procs",
+        "package": "github.com/royalcat/go-continuous-benchmarking/internal/storage",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkReadMetadata - B/op",
+        "value": 1272,
+        "unit": "B/op",
+        "extra": "18204 times\n4 procs",
+        "package": "github.com/royalcat/go-continuous-benchmarking/internal/storage",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkReadMetadata - allocs/op",
+        "value": 13,
+        "unit": "allocs/op",
+        "extra": "18204 times\n4 procs",
+        "package": "github.com/royalcat/go-continuous-benchmarking/internal/storage",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkSanitizeBranchName_Simple",
+        "value": 52.85,
+        "unit": "ns/op",
+        "extra": "4377312 times\n4 procs",
+        "package": "github.com/royalcat/go-continuous-benchmarking/internal/storage",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkSanitizeBranchName_Simple - B/op",
+        "value": 8,
+        "unit": "B/op",
+        "extra": "4377312 times\n4 procs",
+        "package": "github.com/royalcat/go-continuous-benchmarking/internal/storage",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkSanitizeBranchName_Simple - allocs/op",
+        "value": 1,
+        "unit": "allocs/op",
+        "extra": "4377312 times\n4 procs",
+        "package": "github.com/royalcat/go-continuous-benchmarking/internal/storage",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkSanitizeBranchName_Complex",
+        "value": 385.5,
+        "unit": "ns/op",
+        "extra": "603145 times\n4 procs",
+        "package": "github.com/royalcat/go-continuous-benchmarking/internal/storage",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkSanitizeBranchName_Complex - B/op",
+        "value": 208,
+        "unit": "B/op",
+        "extra": "603145 times\n4 procs",
+        "package": "github.com/royalcat/go-continuous-benchmarking/internal/storage",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkSanitizeBranchName_Complex - allocs/op",
+        "value": 2,
+        "unit": "allocs/op",
+        "extra": "603145 times\n4 procs",
+        "package": "github.com/royalcat/go-continuous-benchmarking/internal/storage",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkBranchFileName",
+        "value": 223.5,
+        "unit": "ns/op",
+        "extra": "1000000 times\n4 procs",
+        "package": "github.com/royalcat/go-continuous-benchmarking/internal/storage",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkBranchFileName - B/op",
+        "value": 32,
+        "unit": "B/op",
+        "extra": "1000000 times\n4 procs",
+        "package": "github.com/royalcat/go-continuous-benchmarking/internal/storage",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkBranchFileName - allocs/op",
+        "value": 1,
+        "unit": "allocs/op",
+        "extra": "1000000 times\n4 procs",
+        "package": "github.com/royalcat/go-continuous-benchmarking/internal/storage",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkAppendEntry_LargeBenchmarks",
+        "value": 178241,
+        "unit": "ns/op",
+        "extra": "1314 times\n4 procs",
+        "package": "github.com/royalcat/go-continuous-benchmarking/internal/storage",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkAppendEntry_LargeBenchmarks - B/op",
+        "value": 29460,
+        "unit": "B/op",
+        "extra": "1314 times\n4 procs",
+        "package": "github.com/royalcat/go-continuous-benchmarking/internal/storage",
+        "procs": 4
+      },
+      {
+        "name": "BenchmarkAppendEntry_LargeBenchmarks - allocs/op",
+        "value": 24,
+        "unit": "allocs/op",
+        "extra": "1314 times\n4 procs",
+        "package": "github.com/royalcat/go-continuous-benchmarking/internal/storage",
+        "procs": 4
+      }
+    ]
   }
 ]

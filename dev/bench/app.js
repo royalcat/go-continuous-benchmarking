@@ -249,9 +249,9 @@
     var card = document.createElement("div");
     card.className = "chart-card";
 
-    var title = document.createElement("h2");
-    title.textContent = displayTitle;
-    card.appendChild(title);
+    var titleEl2 = document.createElement("h2");
+    titleEl2.textContent = displayTitle;
+    card.appendChild(titleEl2);
 
     var wrapper = document.createElement("div");
     wrapper.className = "chart-wrapper";
@@ -290,6 +290,9 @@
         });
       }
     }
+
+    // Update chart card title to show actual (scaled) unit
+    titleEl2.textContent = displayUnit;
 
     // Compute min value for log scale clipping
     var positiveValues = values.filter(function (v) {
@@ -351,9 +354,7 @@
           y: {
             type: hasZeros ? "linear" : "logarithmic",
             title: {
-              display: true,
-              text: displayUnit,
-              color: textColor,
+              display: false,
             },
             min: hasZeros ? 0 : logMin,
             ticks: { color: textColor },
