@@ -268,6 +268,19 @@
       return d.bench.value;
     });
     var unit = dataset.length > 0 ? dataset[0].bench.unit : "";
+
+    // Compute min value for log scale clipping
+    var positiveValues = values.filter(function (v) {
+      return v > 0;
+    });
+    var minVal =
+      positiveValues.length > 0 ? Math.min.apply(null, positiveValues) : 1;
+    // Clip lower bound: round down to nearest power of 10 below the minimum
+    var logMin = Math.pow(10, Math.floor(Math.log10(minVal)));
+    var hasZeros = values.some(function (v) {
+      return v <= 0;
+    });
+
     var color = getChartColor(colorIndex || 0);
     var colorAlpha = color + "30";
 
@@ -314,12 +327,13 @@
             grid: { color: gridColor },
           },
           y: {
+            type: hasZeros ? "linear" : "logarithmic",
             title: {
               display: true,
               text: unit,
               color: textColor,
             },
-            beginAtZero: true,
+            min: hasZeros ? 0 : logMin,
             ticks: { color: textColor },
             grid: { color: gridColor },
           },
