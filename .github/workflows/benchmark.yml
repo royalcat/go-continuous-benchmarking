@@ -41,4 +41,3 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           auto-push: "true"
           max-items-in-chart: "100"
-          cgo-enabled: true
