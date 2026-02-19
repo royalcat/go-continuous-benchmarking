@@ -380,7 +380,7 @@
 
     var filterCPUModel = null;
     var cpuModelVal = cpuModelSelect.value;
-    if (cpuModelVal !== "all") {
+    if (cpuModelVal) {
       filterCPUModel = cpuModelVal;
     }
 
@@ -551,11 +551,6 @@
 
     cpuModelSelect.innerHTML = "";
 
-    var allOpt = document.createElement("option");
-    allOpt.value = "all";
-    allOpt.textContent = "All";
-    cpuModelSelect.appendChild(allOpt);
-
     for (var i = 0; i < models.length; i++) {
       var opt = document.createElement("option");
       opt.value = models[i];
@@ -566,15 +561,12 @@
     // Hide the selector entirely when no CPU info exists in the data
     if (models.length === 0) {
       cpuModelGroup.style.display = "none";
-      cpuModelSelect.value = "all";
     } else {
       cpuModelGroup.style.display = "flex";
-      if (models.length === 1) {
-        cpuModelSelect.value = models[0];
-      } else if (currentVal && models.indexOf(currentVal) >= 0) {
+      if (currentVal && models.indexOf(currentVal) >= 0) {
         cpuModelSelect.value = currentVal;
       } else {
-        cpuModelSelect.value = "all";
+        cpuModelSelect.value = models[0];
       }
     }
   }
