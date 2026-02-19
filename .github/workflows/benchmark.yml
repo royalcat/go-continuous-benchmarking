@@ -25,7 +25,7 @@ jobs:
         run: CGO_ENABLED=0 go test -bench=. -benchmem -count=1 -benchtime=200ms ./... 2>&1 | tee bench-output.txt
 
       - name: Store benchmark results
-        uses: royalcat/go-continuous-benchmarking
+        uses: royalcat/go-continuous-benchmarking@master
         with:
           output-file-path: project/bench-output.txt
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -37,7 +37,7 @@ jobs:
         run: CGO_ENABLED=1 go test -bench=. -benchmem -count=1 -benchtime=200ms ./... 2>&1 | tee bench-output.txt
 
       - name: Store benchmark results
-        uses: royalcat/go-continuous-benchmarking
+        uses: royalcat/go-continuous-benchmarking@master
         with:
           output-file-path: project/bench-output.txt
           github-token: ${{ secrets.GITHUB_TOKEN }}
