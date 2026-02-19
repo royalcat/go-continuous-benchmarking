@@ -19,11 +19,14 @@ type Commit struct {
 	URL     string `json:"url"`
 }
 
-// BenchmarkEntry represents a single benchmark run (one commit's results).
+// BenchmarkEntry represents a single benchmark run (one commit's results
+// from a specific host/configuration).
 type BenchmarkEntry struct {
 	Commit     Commit            `json:"commit"`
 	Date       int64             `json:"date"`
 	CPU        string            `json:"cpu,omitempty"`
+	GOOS       string            `json:"goos,omitempty"`
+	GOARCH     string            `json:"goarch,omitempty"`
 	CGO        bool              `json:"cgo"`
 	Benchmarks []BenchmarkResult `json:"benchmarks"`
 }

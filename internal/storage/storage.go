@@ -13,31 +13,6 @@ import (
 	"github.com/royalcat/go-continuous-benchmarking/internal/model"
 )
 
-// FileMetadata holds per-file metadata that accompanies a benchmark output file.
-// It is typically stored as a sidecar JSON file (e.g. "metadata.json") in the
-// same directory as the benchmark output.
-type FileMetadata struct {
-	CPU string `json:"cpu,omitempty"`
-	CGO *bool  `json:"cgo,omitempty"` // pointer to distinguish unset from false
-}
-
-// LoadFileMetadata reads a sidecar metadata JSON file from the given path.
-// If the file does not exist, a zero FileMetadata is returned with no error.
-func LoadFileMetadata(path string) (FileMetadata, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return FileMetadata{}, nil
-		}
-		return FileMetadata{}, fmt.Errorf("reading file metadata %q: %w", path, err)
-	}
-	var m FileMetadata
-	if err := json.Unmarshal(data, &m); err != nil {
-		return FileMetadata{}, fmt.Errorf("decoding file metadata %q: %w", path, err)
-	}
-	return m, nil
-}
-
 // Storage manages benchmark data files on disk.
 // The layout on disk is:
 //

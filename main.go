@@ -3,11 +3,14 @@ package main
 import (
 	"bufio"
 	"embed"
+	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -20,63 +23,102 @@ import (
 //go:embed frontend/*
 var frontendFS embed.FS
 
+func usage() {
+	fmt.Fprintf(os.Stderr, `Usage: gobenchdata <command> [flags]
+
+Commands:
+  parse   Parse go test -bench output and save a BenchmarkEntry JSON
+          along with host metadata (CPU, GOOS, GOARCH, CGO).
+          Run this on each benchmark runner.
+
+  store   Read one or more pre-parsed BenchmarkEntry JSON files,
+          merge them into the branch data on gh-pages, and deploy
+          the frontend. Run this once after all benchmark jobs finish.
+
+Run "gobenchdata <command> -help" for flag details.
+`)
+	os.Exit(2)
+}
+
 func main() {
+	log.SetFlags(0)
+
+	if len(os.Args) < 2 {
+		usage()
+	}
+
+	command := os.Args[1]
+	switch command {
+	case "parse":
+		runParse(os.Args[2:])
+	case "store":
+		runStore(os.Args[2:])
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown command: %s\n\n", command)
+		usage()
+	}
+}
+
+// ---------------------------------------------------------------------------
+// parse subcommand
+// ---------------------------------------------------------------------------
+
+func runParse(args []string) {
+	fs := flag.NewFlagSet("parse", flag.ExitOnError)
+
 	var (
 		outputFile   string
-		branch       string
-		dataDir      string
+		resultDir    string
 		commitSHA    string
 		commitMsg    string
 		commitAuthor string
 		commitDate   string
 		commitURL    string
-		maxItems     int
-		repoURL      string
 		cpuModel     string
 		cgoFlag      string
 		goModule     string
+		repoURL      string
 	)
 
-	flag.StringVar(&outputFile, "output-file", "", "Path(s) to go test -bench output file(s). Supports glob patterns and comma-separated paths. Reads stdin if empty.")
-	flag.StringVar(&branch, "branch", "main", "Git branch name")
-	flag.StringVar(&dataDir, "data-dir", "dev/bench", "Directory to store benchmark data and frontend files")
-	flag.StringVar(&commitSHA, "commit-sha", "", "Commit SHA (required)")
-	flag.StringVar(&commitMsg, "commit-msg", "", "Commit message")
-	flag.StringVar(&commitAuthor, "commit-author", "", "Commit author username")
-	flag.StringVar(&commitDate, "commit-date", "", "Commit date in ISO 8601 format (defaults to now)")
-	flag.StringVar(&commitURL, "commit-url", "", "URL to the commit on GitHub")
-	flag.IntVar(&maxItems, "max-items", 0, "Maximum number of benchmark entries per branch (0 = unlimited)")
-	flag.StringVar(&repoURL, "repo-url", "", "Repository URL for display in the frontend header")
-	flag.StringVar(&cpuModel, "cpu-model", "", "CPU model name to record. If empty, auto-detected from the current machine")
-	flag.StringVar(&cgoFlag, "cgo", "", "CGO enabled status: 'true', 'false', or '' (auto-detect from CGO_ENABLED env var)")
-	flag.StringVar(&goModule, "go-module", "", "Go module path to strip from package names in the dashboard. If empty, auto-detected from go.mod")
+	fs.StringVar(&outputFile, "output-file", "", "Path to go test -bench output file (reads stdin if empty)")
+	fs.StringVar(&resultDir, "result-dir", "benchmark-result", "Directory to write the parsed entry JSON and output log")
+	fs.StringVar(&commitSHA, "commit-sha", "", "Commit SHA (required)")
+	fs.StringVar(&commitMsg, "commit-msg", "", "Commit message")
+	fs.StringVar(&commitAuthor, "commit-author", "", "Commit author")
+	fs.StringVar(&commitDate, "commit-date", "", "Commit date in ISO 8601 (defaults to now)")
+	fs.StringVar(&commitURL, "commit-url", "", "URL to the commit")
+	fs.StringVar(&cpuModel, "cpu-model", "", "CPU model name (auto-detected if empty)")
+	fs.StringVar(&cgoFlag, "cgo", "", "CGO enabled: 'true', 'false', or '' (auto-detect)")
+	fs.StringVar(&goModule, "go-module", "", "Go module path to strip from package names (auto-detect if empty)")
+	fs.StringVar(&repoURL, "repo-url", "", "Repository URL (used for go-module fallback)")
 
-	flag.Parse()
+	fs.Parse(args)
 
 	if commitSHA == "" {
 		log.Fatal("Error: -commit-sha is required")
 	}
 
-	// Default commit date to now.
 	if commitDate == "" {
 		commitDate = time.Now().UTC().Format(time.RFC3339)
 	}
 
-	// Detect CGO status (used as default for files without sidecar metadata).
-	defaultCGO := detectCGO(cgoFlag)
+	// --- Host metadata (auto-detect on the runner) ---
 
-	// Auto-detect CPU model if not explicitly provided (used as default fallback).
-	defaultCPU := cpuModel
-	if defaultCPU == "" {
-		defaultCPU = hwinfo.CPUModel()
-		fmt.Printf("Auto-detected CPU model: %s\n", defaultCPU)
+	cpu := cpuModel
+	if cpu == "" {
+		cpu = hwinfo.CPUModel()
+		fmt.Printf("Auto-detected CPU model: %s\n", cpu)
 	} else {
-		fmt.Printf("Using provided CPU model: %s\n", defaultCPU)
+		fmt.Printf("Using provided CPU model: %s\n", cpu)
 	}
 
-	fmt.Printf("Default CGO enabled: %v\n", defaultCGO)
+	cgoEnabled := detectCGO(cgoFlag)
+	fmt.Printf("CGO enabled: %v\n", cgoEnabled)
 
-	// Detect Go module path if not explicitly provided.
+	goos := runtime.GOOS
+	goarch := runtime.GOARCH
+	fmt.Printf("GOOS: %s, GOARCH: %s\n", goos, goarch)
+
 	if goModule == "" {
 		goModule = detectGoModule(repoURL)
 		if goModule != "" {
@@ -86,48 +128,144 @@ func main() {
 		fmt.Printf("Using provided Go module: %s\n", goModule)
 	}
 
-	// Build the commit info (shared across all entries).
-	commit := model.Commit{
-		SHA:     commitSHA,
-		Message: firstLine(commitMsg),
-		Author:  commitAuthor,
-		Date:    commitDate,
-		URL:     commitURL,
+	// --- Read and parse benchmark output ---
+
+	var reader io.Reader
+	if outputFile != "" {
+		f, err := os.Open(outputFile)
+		if err != nil {
+			log.Fatalf("Error opening output file: %v", err)
+		}
+		defer f.Close()
+		reader = f
+	} else {
+		reader = os.Stdin
 	}
 
-	// Resolve output files.
-	outputFiles := resolveOutputFiles(outputFile)
+	// Tee: we read once and both parse and capture raw output.
+	var rawBuf strings.Builder
+	tee := io.TeeReader(reader, &rawBuf)
 
-	var entries []model.BenchmarkEntry
+	benchmarks, outputMeta, err := parse.ParseGoBenchOutputWithMeta(tee)
+	if err != nil {
+		log.Fatalf("Error parsing benchmark output: %v", err)
+	}
 
-	if len(outputFiles) == 0 {
-		// No files specified — read from stdin (single entry mode).
-		benchmarks, err := parse.ParseGoBenchOutput(os.Stdin)
-		if err != nil {
-			log.Fatalf("Error parsing benchmark output from stdin: %v", err)
+	// If the go test output had a cpu: line and we auto-detected, prefer
+	// the output's CPU (it reflects the actual benchmark machine).
+	if cpuModel == "" && outputMeta.CPU != "" {
+		cpu = outputMeta.CPU
+		fmt.Printf("Using CPU from go test output: %s\n", cpu)
+	}
+
+	fmt.Printf("Parsed %d benchmark result(s)\n", len(benchmarks))
+	for _, b := range benchmarks {
+		fmt.Printf("  %s: %.4f %s\n", b.Name, b.Value, b.Unit)
+	}
+
+	// --- Build BenchmarkEntry ---
+
+	entry := model.BenchmarkEntry{
+		Commit: model.Commit{
+			SHA:     commitSHA,
+			Message: firstLine(commitMsg),
+			Author:  commitAuthor,
+			Date:    commitDate,
+			URL:     commitURL,
+		},
+		Date:       time.Now().UnixMilli(),
+		CPU:        cpu,
+		GOOS:       goos,
+		GOARCH:     goarch,
+		CGO:        cgoEnabled,
+		Benchmarks: benchmarks,
+	}
+
+	// --- Write results to result-dir ---
+
+	if err := os.MkdirAll(resultDir, 0o755); err != nil {
+		log.Fatalf("Error creating result directory: %v", err)
+	}
+
+	// Write entry.json
+	entryJSON, err := json.MarshalIndent(entry, "", "  ")
+	if err != nil {
+		log.Fatalf("Error marshaling entry: %v", err)
+	}
+	entryPath := filepath.Join(resultDir, "entry.json")
+	if err := os.WriteFile(entryPath, entryJSON, 0o644); err != nil {
+		log.Fatalf("Error writing entry JSON: %v", err)
+	}
+	fmt.Printf("Wrote parsed entry to %s\n", entryPath)
+
+	// Write output.log (raw benchmark output for debugging)
+	logPath := filepath.Join(resultDir, "output.log")
+	if err := os.WriteFile(logPath, []byte(rawBuf.String()), 0o644); err != nil {
+		log.Fatalf("Error writing output log: %v", err)
+	}
+	fmt.Printf("Wrote raw output to %s\n", logPath)
+}
+
+// ---------------------------------------------------------------------------
+// store subcommand
+// ---------------------------------------------------------------------------
+
+func runStore(args []string) {
+	fs := flag.NewFlagSet("store", flag.ExitOnError)
+
+	var (
+		entriesGlob string
+		branch      string
+		dataDir     string
+		maxItems    int
+		repoURL     string
+		goModule    string
+	)
+
+	fs.StringVar(&entriesGlob, "entries", "", "Glob or comma-separated paths to entry.json files (required)")
+	fs.StringVar(&branch, "branch", "main", "Git branch name")
+	fs.StringVar(&dataDir, "data-dir", "dev/bench", "Directory to store benchmark data and frontend files")
+	fs.IntVar(&maxItems, "max-items", 0, "Maximum number of benchmark entries per branch (0 = unlimited)")
+	fs.StringVar(&repoURL, "repo-url", "", "Repository URL for the frontend header")
+	fs.StringVar(&goModule, "go-module", "", "Go module path for the frontend")
+
+	fs.Parse(args)
+
+	if entriesGlob == "" {
+		log.Fatal("Error: -entries is required")
+	}
+
+	// Detect Go module if not provided.
+	if goModule == "" {
+		goModule = detectGoModule(repoURL)
+		if goModule != "" {
+			fmt.Printf("Auto-detected Go module: %s\n", goModule)
 		}
-
-		fmt.Printf("Parsed %d benchmark result(s) from stdin\n", len(benchmarks))
-		for _, b := range benchmarks {
-			fmt.Printf("  %s: %.4f %s\n", b.Name, b.Value, b.Unit)
-		}
-
-		entries = append(entries, model.BenchmarkEntry{
-			Commit:     commit,
-			Date:       time.Now().UnixMilli(),
-			CPU:        defaultCPU,
-			CGO:        defaultCGO,
-			Benchmarks: benchmarks,
-		})
 	} else {
-		// Process each output file with its optional sidecar metadata.
-		for _, filePath := range outputFiles {
-			entry, err := processOutputFile(filePath, commit, defaultCPU, defaultCGO)
-			if err != nil {
-				log.Fatalf("Error processing %s: %v", filePath, err)
-			}
-			entries = append(entries, entry)
+		fmt.Printf("Using provided Go module: %s\n", goModule)
+	}
+
+	// Resolve entry files.
+	entryFiles := resolveFiles(entriesGlob)
+	if len(entryFiles) == 0 {
+		log.Fatal("Error: no entry files matched")
+	}
+
+	fmt.Printf("Found %d entry file(s):\n", len(entryFiles))
+	for _, f := range entryFiles {
+		fmt.Printf("  %s\n", f)
+	}
+
+	// Load all entries.
+	var entries []model.BenchmarkEntry
+	for _, path := range entryFiles {
+		entry, err := loadEntry(path)
+		if err != nil {
+			log.Fatalf("Error loading entry from %s: %v", path, err)
 		}
+		fmt.Printf("Loaded entry from %s: CPU=%s GOOS=%s GOARCH=%s CGO=%v benchmarks=%d\n",
+			path, entry.CPU, entry.GOOS, entry.GOARCH, entry.CGO, len(entry.Benchmarks))
+		entries = append(entries, entry)
 	}
 
 	// Initialize storage.
@@ -136,15 +274,23 @@ func main() {
 		log.Fatalf("Error initializing storage: %v", err)
 	}
 
-	// Append all entries in a single batch operation.
+	// Append all entries in a single batch.
 	if err := store.AppendEntries(branch, entries, maxItems); err != nil {
-		log.Fatalf("Error appending benchmark entries: %v", err)
+		log.Fatalf("Error appending entries: %v", err)
 	}
 
-	fmt.Printf("Stored %d benchmark entry/entries for branch %q (commit %s)\n",
-		len(entries), branch, commitSHA[:minInt(7, len(commitSHA))])
+	commitSHA := ""
+	if len(entries) > 0 {
+		commitSHA = entries[0].Commit.SHA
+	}
+	shortSHA := commitSHA
+	if len(shortSHA) > 7 {
+		shortSHA = shortSHA[:7]
+	}
 
-	// Write repo URL metadata file for the frontend.
+	fmt.Printf("Stored %d entry/entries for branch %q (commit %s)\n", len(entries), branch, shortSHA)
+
+	// Write repo-level metadata for the frontend.
 	if repoURL != "" || goModule != "" {
 		if err := store.WriteMetadata(repoURL, goModule); err != nil {
 			log.Fatalf("Error writing metadata: %v", err)
@@ -159,76 +305,31 @@ func main() {
 	fmt.Println("Frontend files deployed successfully")
 }
 
-// processOutputFile parses a single benchmark output file and creates a
-// BenchmarkEntry. It looks for a sidecar metadata file in the same directory
-// (named "metadata.json") to obtain per-file CPU model and CGO status. If the
-// sidecar is not found, it falls back to extracting the CPU from the go test
-// output headers, then to the provided defaults.
-func processOutputFile(filePath string, commit model.Commit, defaultCPU string, defaultCGO bool) (model.BenchmarkEntry, error) {
-	f, err := os.Open(filePath)
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+// loadEntry reads a BenchmarkEntry from a JSON file.
+func loadEntry(path string) (model.BenchmarkEntry, error) {
+	data, err := os.ReadFile(path)
 	if err != nil {
-		return model.BenchmarkEntry{}, fmt.Errorf("opening output file: %w", err)
+		return model.BenchmarkEntry{}, fmt.Errorf("reading %s: %w", path, err)
 	}
-	defer f.Close()
-
-	// Parse benchmark results and extract output metadata (cpu: line).
-	benchmarks, outputMeta, err := parse.ParseGoBenchOutputWithMeta(f)
-	if err != nil {
-		return model.BenchmarkEntry{}, fmt.Errorf("parsing benchmark output: %w", err)
+	var entry model.BenchmarkEntry
+	if err := json.Unmarshal(data, &entry); err != nil {
+		return model.BenchmarkEntry{}, fmt.Errorf("decoding %s: %w", path, err)
 	}
-
-	fmt.Printf("Parsed %d benchmark result(s) from %s\n", len(benchmarks), filePath)
-	for _, b := range benchmarks {
-		fmt.Printf("  %s: %.4f %s\n", b.Name, b.Value, b.Unit)
-	}
-
-	// Load sidecar metadata if available.
-	// Look for metadata.json in the same directory as the output file.
-	dir := filepath.Dir(filePath)
-	sidecar, err := storage.LoadFileMetadata(filepath.Join(dir, "metadata.json"))
-	if err != nil {
-		return model.BenchmarkEntry{}, fmt.Errorf("loading sidecar metadata: %w", err)
-	}
-
-	// Resolve CPU: sidecar > output header > default.
-	cpu := defaultCPU
-	if outputMeta.CPU != "" {
-		cpu = outputMeta.CPU
-	}
-	if sidecar.CPU != "" {
-		cpu = sidecar.CPU
-	}
-
-	// Resolve CGO: sidecar > default.
-	cgo := defaultCGO
-	if sidecar.CGO != nil {
-		cgo = *sidecar.CGO
-	}
-
-	fmt.Printf("  CPU: %s, CGO: %v\n", cpu, cgo)
-
-	return model.BenchmarkEntry{
-		Commit:     commit,
-		Date:       time.Now().UnixMilli(),
-		CPU:        cpu,
-		CGO:        cgo,
-		Benchmarks: benchmarks,
-	}, nil
+	return entry, nil
 }
 
-// resolveOutputFiles takes the raw -output-file flag value and expands it into
-// a list of concrete file paths. It supports:
-//   - Empty string → returns nil (stdin mode)
-//   - Comma-separated paths (e.g. "a.txt,b.txt")
-//   - Newline-separated paths (e.g. from a multiline GitHub Actions input)
-//   - Glob patterns in each segment (e.g. "results/*/output.txt")
-func resolveOutputFiles(raw string) []string {
+// resolveFiles expands a raw string (comma-separated, newline-separated,
+// with optional glob patterns) into a list of file paths.
+func resolveFiles(raw string) []string {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return nil
 	}
 
-	// Split by comma and newline.
 	var segments []string
 	for _, part := range strings.Split(raw, ",") {
 		for _, seg := range strings.Split(part, "\n") {
@@ -239,35 +340,31 @@ func resolveOutputFiles(raw string) []string {
 		}
 	}
 
-	// Expand globs.
 	var files []string
 	for _, seg := range segments {
 		matches, err := filepath.Glob(seg)
 		if err != nil {
-			// If glob is invalid, treat it as a literal path.
 			files = append(files, seg)
 			continue
 		}
 		if len(matches) == 0 {
-			// No matches — keep as literal so we get a clear "file not found" error later.
 			files = append(files, seg)
 		} else {
 			files = append(files, matches...)
 		}
 	}
-
 	return files
 }
 
 // deployFrontend copies the embedded frontend files into the data directory.
 func deployFrontend(dataDir string) error {
-	files := []string{"index.html", "app.js"}
-	for _, name := range files {
+	names := []string{"index.html", "app.js"}
+	for _, name := range names {
 		content, err := frontendFS.ReadFile("frontend/" + name)
 		if err != nil {
 			return fmt.Errorf("reading embedded file %s: %w", name, err)
 		}
-		dest := dataDir + "/" + name
+		dest := filepath.Join(dataDir, name)
 		if err := os.WriteFile(dest, content, 0o644); err != nil {
 			return fmt.Errorf("writing %s: %w", dest, err)
 		}
@@ -283,23 +380,12 @@ func firstLine(s string) string {
 	return s
 }
 
-func minInt(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-// detectGoModule tries to find the Go module path.
-// It first tries parsing go.mod in the current directory, then falls back
-// to deriving the module path from the repo URL.
+// detectGoModule tries to find the Go module path from go.mod or the repo URL.
 func detectGoModule(repoURL string) string {
-	// Try go.mod in current directory
 	if mod := parseGoMod("go.mod"); mod != "" {
 		return mod
 	}
 
-	// Fall back to repo URL: "https://github.com/user/repo" -> "github.com/user/repo"
 	if repoURL != "" {
 		trimmed := strings.TrimSuffix(repoURL, "/")
 		trimmed = strings.TrimSuffix(trimmed, ".git")
@@ -313,9 +399,7 @@ func detectGoModule(repoURL string) string {
 	return ""
 }
 
-// parseGoMod reads a go.mod file and extracts the module path from the
-// "module" directive. Returns empty string if the file doesn't exist or
-// can't be parsed.
+// parseGoMod reads a go.mod file and extracts the module path.
 func parseGoMod(path string) string {
 	f, err := os.Open(path)
 	if err != nil {
@@ -334,8 +418,7 @@ func parseGoMod(path string) string {
 }
 
 // detectCGO determines CGO enabled status.
-// If flagVal is "true"/"false", use that. Otherwise auto-detect from CGO_ENABLED env var.
-// If env var is also unset, defaults to true (Go's default behavior).
+// Explicit flag value > CGO_ENABLED env var > default true.
 func detectCGO(flagVal string) bool {
 	flagVal = strings.TrimSpace(strings.ToLower(flagVal))
 	switch flagVal {
@@ -344,13 +427,11 @@ func detectCGO(flagVal string) bool {
 	case "false", "0":
 		return false
 	default:
-		// Auto-detect from environment
 		env := os.Getenv("CGO_ENABLED")
 		switch strings.TrimSpace(env) {
 		case "0":
 			return false
 		default:
-			// CGO is enabled by default in Go when not cross-compiling
 			return true
 		}
 	}

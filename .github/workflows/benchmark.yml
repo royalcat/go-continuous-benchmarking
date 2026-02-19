@@ -28,26 +28,20 @@ jobs:
           go-version: "1.24"
 
       - name: Run benchmarks
-        run: go test -bench=. -count=1 -benchtime=200ms ./... 2>&1 | tee output.txt
+        run: go test -bench=. -count=1 -benchtime=200ms ./... 2>&1 | tee bench-output.txt
 
-      - name: Write metadata
-        shell: bash
-        run: |
-          if [ "${{ matrix.cgo }}" = "1" ]; then
-            echo '{"cgo": true}' > metadata.json
-          else
-            echo '{"cgo": false}' > metadata.json
-          fi
-          echo "metadata.json contents:"
-          cat metadata.json
+      - name: Parse benchmark results
+        uses: royalcat/go-continuous-benchmarking@master
+        with:
+          mode: parse
+          output-file-path: bench-output.txt
+          result-dir: benchmark-result
 
-      - name: Upload benchmark results
+      - name: Upload parsed results
         uses: actions/upload-artifact@v4
         with:
           name: bench-${{ matrix.os }}-cgo${{ matrix.cgo }}
-          path: |
-            output.txt
-            metadata.json
+          path: benchmark-result/
           retention-days: 1
 
   store:
@@ -78,7 +72,8 @@ jobs:
       - name: Store benchmark results
         uses: royalcat/go-continuous-benchmarking@master
         with:
-          output-file-path: "benchmark-results/*/output.txt"
+          mode: store
+          entries: "benchmark-results/*/entry.json"
           github-token: ${{ secrets.GITHUB_TOKEN }}
           auto-push: "true"
           max-items-in-chart: "100"
